@@ -1,0 +1,34 @@
+{
+  "name": "preview_cycles",
+  "engine": "CYCLES",
+  "resolution": [
+    960,
+    540
+  ],
+  "fps": 30,
+  "eevee": {
+    "taa_render_samples": 48,
+    "use_raytracing": true
+  },
+  "cycles": {
+    "samples": 48,
+    "use_adaptive_sampling": true,
+    "use_denoising": true,
+    "denoiser": "OPENIMAGEDENOISE"
+  },
+  "motion_blur": false,
+  "motion_blur_shutter": 0.5,
+  "color": {
+    "display_device": "sRGB",
+    "view_transform": "AgX",
+    "look": "None",
+    "exposure": 0.0,
+    "gamma": 1.0
+  },
+  "glare": {
+    "enabled": true,
+    "threshold": 0.9,
+    "mix": 0.05,
+    "size": 0.55
+  }
+}
