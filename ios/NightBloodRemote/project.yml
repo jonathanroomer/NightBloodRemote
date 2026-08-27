@@ -1,0 +1,130 @@
+name: NightBloodRemote
+options:
+  minimumXcodeGenVersion: 2.45.0
+  deploymentTarget:
+    iOS: "18.0"
+settings:
+  base:
+    SWIFT_VERSION: 6.0
+    IPHONEOS_DEPLOYMENT_TARGET: 18.0
+    TARGETED_DEVICE_FAMILY: 1
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    SWIFT_STRICT_CONCURRENCY: complete
+targets:
+  NightBloodRemote:
+    type: application
+    platform: iOS
+    sources:
+      # Explicit allowlist: adding a fallback/LAN Swift file to the directory
+      # can never silently add it to the signed direct target.
+      - path: NightBloodRemote/Assets.xcassets
+      - path: NightBloodRemote/CodexOAuthCallbackServer.swift
+      - path: NightBloodRemote/CodexOAuthSafariPresenter.swift
+      - path: NightBloodRemote/CodexPlanOAuth.swift
+      - path: NightBloodRemote/CodexPlanTokenStore.swift
+      - path: NightBloodRemote/CodexRemoteControllerREST.swift
+      - path: NightBloodRemote/CodexRemoteControllerTypes.swift
+      - path: NightBloodRemote/CodexRemoteDeviceCheckAttestation.swift
+      - path: NightBloodRemote/CodexRemoteDeviceIdentity.swift
+      - path: NightBloodRemote/CodexRemoteEnrolment.swift
+      - path: NightBloodRemote/CodexRemoteEnrolmentStore.swift
+      - path: NightBloodRemote/CodexRemoteEnrolmentTransport.swift
+      - path: NightBloodRemote/CodexRemoteEnrolmentTypes.swift
+      - path: NightBloodRemote/CodexRemoteHeartbeatAutomation.swift
+      - path: NightBloodRemote/CodexRemotePairingLifecycleStore.swift
+      - path: NightBloodRemote/CodexRemoteRelayHandshake.swift
+      - path: NightBloodRemote/CodexRemoteURLSessionWebSocket.swift
+      - path: NightBloodRemote/CodexRemoteVoiceTransport.swift
+      - path: NightBloodRemote/CodexRemoteVoiceTypes.swift
+      - path: NightBloodRemote/DirectCharacterPromptStore.swift
+      - path: NightBloodRemote/DeviceAccessGate.swift
+      - path: NightBloodRemote/DirectCodexRemoteSetupModel.swift
+      - path: NightBloodRemote/DirectCompanionView.swift
+      - path: NightBloodRemote/DirectFaceWebView.swift
+      - path: NightBloodRemote/DirectNightBloodRemoteApp.swift
+      - path: NightBloodRemote/DirectSettingsView.swift
+      - path: NightBloodRemote/DirectVoiceBackgroundAudio.swift
+      - path: NightBloodRemote/DirectVoiceSessionModel.swift
+      - path: NightBloodRemote/FrontCameraGazeTracker.swift
+      - path: NightBloodRemote/NightBloodLiveActivityIntents.swift
+      - path: NightBloodRemote/NightBloodVoiceActivityAttributes.swift
+      - path: NightBloodRemote/NightBloodVoiceLiveActivityManager.swift
+      - path: CharacterPrompts/NightBlood.txt
+        buildPhase: resources
+      - path: CharacterPrompts/Marshmallow.txt
+        buildPhase: resources
+    preBuildScripts:
+      - name: Build bundled NightBlood face
+        basedOnDependencyAnalysis: false
+        script: |
+          set -euo pipefail
+          cd "$SRCROOT/../.."
+          cd app/ui
+          /bin/sh scripts/run-node.sh node_modules/vite/bin/vite.js build --config vite.ios-direct.config.ts
+          /bin/sh scripts/run-node.sh scripts/inline-ios-direct-build.mjs
+          FACE_DEST="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/dist-ios-direct"
+          /bin/mkdir -p "$FACE_DEST"
+          /usr/bin/ditto dist-ios-direct "$FACE_DEST"
+    settings:
+      base:
+        # Replace these example identifiers with identifiers owned by your
+        # Apple Developer account before a physical-device build.
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.nightblood.remote
+        PRODUCT_NAME: NightBlood
+        TARGETED_DEVICE_FAMILY: 1
+        INFOPLIST_FILE: NightBloodRemote/DirectInfo.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Intentionally blank in the public source. Select your own team in
+        # Xcode; never commit a personal development-team identifier.
+        DEVELOPMENT_TEAM: ""
+        # OpenAI does not currently document public third-party Codex Remote
+        # OAuth client registration. Leave blank for demo builds. If OpenAI
+        # provides you with a client registration, configure it locally in
+        # Xcode without committing the value.
+        CODEX_OAUTH_CLIENT_ID: ""
+        # Optional saved-project identifier used only by the bounded
+        # create_thread voice tool. This is account metadata: configure it in
+        # an uncommitted local build setting, never in the public repository.
+        CODEX_PROJECT_ID: ""
+        CURRENT_PROJECT_VERSION: 7
+        MARKETING_VERSION: 1.6.0
+        GENERATE_INFOPLIST_FILE: NO
+    dependencies:
+      - target: NightBloodLiveActivity
+        embed: true
+    scheme:
+      gatherCoverageData: false
+      testTargets:
+        - NightBloodRemoteTests
+  NightBloodLiveActivity:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: NightBloodLiveActivity/NightBloodVoiceLiveActivityWidget.swift
+      - path: NightBloodRemote/NightBloodLiveActivityIntents.swift
+      - path: NightBloodRemote/NightBloodVoiceActivityAttributes.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.nightblood.remote.liveactivity
+        PRODUCT_NAME: NightBloodLiveActivity
+        INFOPLIST_FILE: NightBloodLiveActivity/Info.plist
+        DEVELOPMENT_TEAM: ""
+        CURRENT_PROJECT_VERSION: 7
+        MARKETING_VERSION: 1.6.0
+        GENERATE_INFOPLIST_FILE: NO
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
+        TARGETED_DEVICE_FAMILY: 1
+  NightBloodRemoteTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: NightBloodRemoteTests
+    dependencies:
+      - target: NightBloodRemote
+    settings:
+      base:
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/NightBlood.app/NightBlood"

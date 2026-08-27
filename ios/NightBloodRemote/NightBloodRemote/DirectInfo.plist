@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>$(DEVELOPMENT_LANGUAGE)</string>
+  <key>CFBundleExecutable</key>
+  <string>$(EXECUTABLE_NAME)</string>
+  <key>CFBundleIdentifier</key>
+  <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleName</key>
+  <string>NightBlood</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>$(MARKETING_VERSION)</string>
+  <key>CFBundleVersion</key>
+  <string>$(CURRENT_PROJECT_VERSION)</string>
+  <key>CodexOAuthClientID</key>
+  <string>$(CODEX_OAUTH_CLIENT_ID)</string>
+  <key>CodexProjectID</key>
+  <string>$(CODEX_PROJECT_ID)</string>
+  <key>LSRequiresIPhoneOS</key>
+  <true/>
+  <key>NSCameraUsageDescription</key>
+  <string>NightBlood uses the front TrueDepth camera to make its eyes follow you. Camera frames stay on this iPhone.</string>
+  <key>NSFaceIDUsageDescription</key>
+  <string>NightBlood uses Face ID so only the device owner can start a remote session.</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>NightBlood uses the iPhone microphone while you are talking to Codex.</string>
+  <key>NSSupportsLiveActivities</key>
+  <true/>
+  <key>UIApplicationSupportsIndirectInputEvents</key>
+  <true/>
+  <key>UIBackgroundModes</key>
+  <array>
+    <string>audio</string>
+  </array>
+  <key>UILaunchScreen</key>
+  <dict/>
+  <key>UIRequiresFullScreen</key>
+  <true/>
+  <key>UIStatusBarHidden</key>
+  <true/>
+  <key>UISupportedInterfaceOrientations</key>
+  <array>
+    <string>UIInterfaceOrientationPortrait</string>
+  </array>
+  <key>UIViewControllerBasedStatusBarAppearance</key>
+  <false/>
+</dict>
+</plist>

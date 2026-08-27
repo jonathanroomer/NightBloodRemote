@@ -1,0 +1,39 @@
+:root {
+  color-scheme: dark;
+  background: #000;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #000;
+}
+
+body {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.ios-face {
+  width: 100%;
+  height: 100%;
+  background: #000;
+  /*
+   * The square shader was designed for the Pi's wide panel. On the iPhone,
+   * fade its floor and frame into the page's digital black so OLED pixels can
+   * genuinely switch off around the living smoke.
+   */
+  -webkit-mask-image:
+    radial-gradient(ellipse 62% 52% at 50% 46%, #000 55%, transparent 100%);
+  mask-image:
+    radial-gradient(ellipse 62% 52% at 50% 46%, #000 55%, transparent 100%);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  /* Lift the smoke slightly, then clamp its darkest encoded values to black. */
+  filter: brightness(1.06) contrast(1.08) saturate(1.04);
+}
