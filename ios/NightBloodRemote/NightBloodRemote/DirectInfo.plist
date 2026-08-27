@@ -20,8 +20,10 @@
   <string>$(CURRENT_PROJECT_VERSION)</string>
   <key>CodexOAuthClientID</key>
   <string>$(CODEX_OAUTH_CLIENT_ID)</string>
-  <key>CodexProjectID</key>
-  <string>$(CODEX_PROJECT_ID)</string>
+  <key>NightBloodEnableVoiceTaskCreation</key>
+  <string>$(NIGHTBLOOD_ENABLE_VOICE_TASK_CREATION)</string>
+  <key>NightBloodEnableVoiceAutomations</key>
+  <string>$(NIGHTBLOOD_ENABLE_VOICE_AUTOMATIONS)</string>
   <key>LSRequiresIPhoneOS</key>
   <true/>
   <key>NSCameraUsageDescription</key>

@@ -16,9 +16,11 @@ project ID, Apple team ID, token, host name or pairing code into a commit.
 | Direct Codex Remote voice | No | Experimental | Yes; not publicly registerable here |
 | Public Codex App Server transport | Not implemented | Not implemented | Depends on your design |
 
-The repository deliberately ships with `CODEX_OAUTH_CLIENT_ID` and
-`CODEX_PROJECT_ID` empty. The face demo remains usable; account connection does
-not.
+The repository deliberately ships with `CODEX_OAUTH_CLIENT_ID` empty and both
+`NIGHTBLOOD_ENABLE_VOICE_TASK_CREATION` and
+`NIGHTBLOOD_ENABLE_VOICE_AUTOMATIONS` set to `NO`. The face demo remains
+usable; account connection and mutating Voice tools do not silently become
+available.
 
 ## Build and Apple signing
 
@@ -65,10 +67,14 @@ value out of tracked source:
 1. Generate the Xcode project.
 2. In the local, ignored project, add the user-defined build setting
    `CODEX_OAUTH_CLIENT_ID` to the app target.
-3. If you want the bounded voice tool to create another task in one saved
-   Codex project, add that account-specific ID as `CODEX_PROJECT_ID`. Leave it
-   blank to disable project listing and task creation from Voice.
-4. Rebuild and inspect the generated `Info.plist` in the local product. Never
+3. If you want the bounded Voice tool to create another persistent local task
+   using the current task's workspace and permission context, set
+   `NIGHTBLOOD_ENABLE_VOICE_TASK_CREATION` to `YES` only in the ignored local
+   app-target configuration. No saved-project ID is required or accepted.
+4. Leave `NIGHTBLOOD_ENABLE_VOICE_AUTOMATIONS` as `NO` unless you deliberately
+   accept Voice-created/deleted heartbeat files on the paired host. To opt in,
+   set it to `YES` only in the ignored local app-target configuration.
+5. Rebuild and inspect the generated `Info.plist` in the local product. Never
    upload that product as a source artefact.
 
 The app also needs access to the experimental server-side controller feature
@@ -96,7 +102,8 @@ access.
    The user explicitly selects one online host. Even a single result is never
    selected automatically. The binding is revalidated before each session.
 6. **Task selection.** In Settings, the user pastes the exact Codex task link
-   or task UUID to control. The public build begins with this field empty.
+   or task UUID to control. The app validates and stores only the canonical
+   UUID, not the complete pasted link. The public build begins empty.
 7. **Controller session.** Native Swift performs the refresh challenge, keeps
    the short-lived controller token in memory, and opens a TLS-protected WSS
    connection to the selected environment through the relay.
@@ -112,6 +119,37 @@ access.
     result cannot be confirmed, the UI reports an unknown outcome instead of
     silently retrying.
 
+### Bounded Voice tool authority
+
+Passing the foreground Face ID gate authorises the session as a whole. There
+is no second Face ID or confirmation prompt for each enabled tool request.
+Use a least-privilege source task and review its host sandbox, approval policy,
+connectors and credentials before starting Voice.
+
+NightBlood implements only these native Codex app tools:
+
+- `list_projects` returns either no project or one fixed synthetic alias with
+  the placeholder path `/nightblood/configured-project`. It never returns the
+  project name, account-specific project ID or actual host path.
+- `create_thread` is available only when
+  `NIGHTBLOOD_ENABLE_VOICE_TASK_CREATION=YES`. It can create up to 32
+  persistent local tasks per Voice session. The new task receives the model-
+  generated prompt/title and inherits the source task's working directory,
+  workspace roots, sandbox mode, approval policy, approval reviewer,
+  permission profile and service tier on the paired host.
+- `read_thread` and `wait_threads` can inspect only tasks created by that same
+  Voice session. Results can include their title, status and bounded user and
+  assistant message text, which is returned to the Realtime model.
+- `automation_update` can create or delete only one heartbeat owned by the
+  current Voice task. It is disabled unless
+  `NIGHTBLOOD_ENABLE_VOICE_AUTOMATIONS=YES`; when enabled, it writes or removes
+  an automation directory under the paired host's Codex automation store.
+
+There is no Voice route for raw shell commands, raw MCP/App Server calls,
+approval responses, user-input requests, arbitrary filesystem access or task
+archiving. The paired host and service may persist task prompts, messages and
+automation configuration according to their normal retention behaviour.
+
 ### Network destinations
 
 | Destination | Purpose | Data class |
@@ -120,7 +158,8 @@ access.
 | `https://auth.openai.com/oauth/token` | code exchange and refresh | OAuth grant data, native only |
 | `https://chatgpt.com/backend-api/` | experimental enrolment, pairing, environment and refresh requests | account/controller proofs and metadata |
 | `wss://chatgpt.com/backend-api/codex/remote/control/client` | experimental controller relay | bounded App Server and realtime messages |
-| iOS DeviceCheck service | Apple device attestation | Apple-generated device token |
+| iOS DeviceCheck service | request an Apple device token | Apple receives the token request |
+| experimental controller attestation exchange | enrolment proof | Apple token, bundle ID, up to 16 preferred language tags, locale, time zone, combined screen-point dimensions, screen scale, per-launch app-session UUID and token-generation latency |
 | `http://127.0.0.1:1455/auth/callback` or port 1457 | same-device OAuth callback | short-lived code and state |
 
 There is no Mac LAN listener in this target. The loopback HTTP callback stays
@@ -137,7 +176,8 @@ on the iPhone and exists only during sign-in.
 | Controller/session token | native memory | disk, WebView, logs |
 | Pairing code | one exact native submission | analytics, retry queues, screenshots |
 | Host/environment ID | device-only native record | WebView or repository |
-| Task and saved-project IDs | local settings/build configuration | repository defaults or diagnostics |
+| Task UUID | canonical UUID in app preferences | full pasted link, WebView, repository defaults or diagnostics |
+| Voice project alias | fixed non-account alias in source | do not replace it with a real saved-project ID or host path |
 | SDP | bounded native/WebView bridge and realtime request | persistent storage |
 
 ## Public Codex App Server alternative
@@ -157,8 +197,12 @@ NightBlood Remote does **not** currently connect to that socket. Implementing
 the alternative safely requires an explicit design for device-to-host trust,
 pairing, certificate validation, message bounds and the approval boundary. Do
 not expose a raw, unauthenticated App Server port to Wi-Fi or the internet.
-The realtime media portion should follow OpenAI's [WebRTC guidance](https://developers.openai.com/api/docs/guides/realtime-webrtc)
-and keep long-lived credentials on a trusted native or server-side component.
+The realtime media portion should follow OpenAI's [WebRTC guidance](https://developers.openai.com/api/docs/guides/realtime-webrtc).
+A standard OpenAI API key must remain on a trusted backend server—never in a
+browser or distributed iOS binary. Give the client an ephemeral client secret,
+or have a protected backend send the SDP offer to the Realtime API, following
+the official guide. Do not treat native app storage as a safe place for a
+long-lived server API key.
 
 ## Failure and recovery
 
@@ -175,6 +219,13 @@ and keep long-lived credentials on a trusted native or server-side component.
   intended host. Never substitute another host automatically.
 - **Task invalid:** paste a complete task link or canonical task ID belonging
   to the selected host/account.
+- **Voice task creation unavailable:** this is the safe default. Set
+  `NIGHTBLOOD_ENABLE_VOICE_TASK_CREATION=YES` only in the ignored local build
+  after reviewing the inherited permissions. Do not add a real project ID or
+  change the source to return the real host path.
+- **Voice automation unavailable:** this is the safe default. Enable
+  `NIGHTBLOOD_ENABLE_VOICE_AUTOMATIONS` locally only after accepting its host
+  filesystem mutation and retention behaviour.
 - **WSS or realtime closes:** start a new user-authorised session. Do not reuse
   an expired controller token or blindly replay start/stop.
 - **WebView failure:** the native session should close. Reloading the visual

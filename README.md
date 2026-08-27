@@ -20,6 +20,8 @@ generally available public integration:
 - OpenAI does not currently document a public registration flow for a
   third-party Codex Remote iPhone controller;
 - the private relay route also requires third-party DeviceCheck acceptance;
+- task creation and host automation mutation are separately disabled by
+  default and require deliberate local configuration;
 - do not copy a client ID from Codex, ChatGPT or another installed app.
 
 The supported public Codex integration surface is Codex App Server. Its remote
@@ -123,7 +125,11 @@ team and signing data from entering commits.
    copy of `project.yml`.
 4. Leave `CODEX_OAUTH_CLIENT_ID` blank unless OpenAI has issued an OAuth client
    registration for this exact application.
-5. Regenerate the project, build, and inspect the signing summary before
+5. Leave `NIGHTBLOOD_ENABLE_VOICE_AUTOMATIONS` set to `NO` unless you have
+   reviewed and accepted the bounded host mutation described in Connections.
+6. Leave `NIGHTBLOOD_ENABLE_VOICE_TASK_CREATION` set to `NO` unless you have
+   reviewed and accepted persistent task creation with inherited permissions.
+7. Regenerate the project, build, and inspect the signing summary before
    installing it.
 
 ## Fork setup: deliberate blanks, not broken code
@@ -137,8 +143,9 @@ needs its own local configuration:
 | `com.example.nightblood.remote` | replace with bundle IDs controlled by the fork owner |
 | `DEVELOPMENT_TEAM: ""` | select the fork owner's team in the ignored generated Xcode project |
 | `CODEX_OAUTH_CLIENT_ID: ""` | leave blank for the demo unless OpenAI explicitly issues one for that application |
-| `CODEX_PROJECT_ID: ""` | optionally set an account-specific saved-project ID locally; blank disables Voice project listing/task creation |
-| empty Codex task field | paste a task link or task UUID locally in Settings before a real session |
+| `NIGHTBLOOD_ENABLE_VOICE_TASK_CREATION: NO` | keep `NO` unless the fork owner deliberately enables persistent Voice task creation in an ignored local build setting; no project ID is needed |
+| `NIGHTBLOOD_ENABLE_VOICE_AUTOMATIONS: NO` | keep `NO` unless the fork owner deliberately enables Voice heartbeat creation/deletion in an ignored local build setting |
+| empty Codex task field | paste a task link or task UUID locally in Settings before a real session; only its canonical UUID is persisted |
 | no generated `.xcodeproj` | run `make ios-project`; do not commit the result |
 | no `.blend` or rendered face files | regenerate studies from the included Blender scripts |
 
@@ -162,6 +169,14 @@ and regenerate the Xcode project. If signing fails, inspect only your local
 bundle IDs, team and profiles. If a real connection fails, use the staged
 diagnosis in [Connections](docs/CONNECTIONS.md); do not weaken the native/WebView
 boundary, add a LAN listener or retry an uncertain pairing mutation.
+
+Enabling `NIGHTBLOOD_ENABLE_VOICE_TASK_CREATION` lets the Realtime model request
+persistent local task creation using the paired host's existing workspace and
+permission context. Enabling Voice automations additionally permits owned
+heartbeat files to be created or deleted. Neither operation receives a
+separate Face ID prompt after the session starts. Read the complete bounded-
+authority section in [Connections](docs/CONNECTIONS.md) before enabling either
+feature.
 
 ## Documentation
 

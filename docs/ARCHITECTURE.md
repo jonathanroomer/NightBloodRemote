@@ -102,7 +102,7 @@ See [Face creation](FACE_CREATION.md) for the complete workflow.
 | Controller enrolment and selected host | native Keychain | device-only, while retained |
 | Secure Enclave private key | Secure Enclave/Keychain | non-exportable |
 | Controller session token | native memory | one short-lived connection |
-| Task reference and face preferences | native user defaults | until locally changed/cleared |
+| Canonical task UUID and face preferences | native user defaults | until locally changed/cleared; a pasted full task link is not persisted |
 | Camera frames | native tracking pipeline | current frame only |
 | Gaze sample | native and bundled face | current bounded sample |
 | Audio | WebRTC media path | active session; not recorded by this app |
@@ -120,3 +120,6 @@ See [Face creation](FACE_CREATION.md) for the complete workflow.
 6. Keep camera processing local and permission text honest.
 7. Re-audit the signed target whenever the source allowlist, transport,
    logging, analytics or persistence changes.
+8. Do not require or expose a saved-project identifier for Voice task
+   creation. Realtime tool results use only the fixed synthetic project alias
+   and placeholder path; real host paths remain native.

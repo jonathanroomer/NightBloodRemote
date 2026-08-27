@@ -194,15 +194,12 @@ private struct CodexRemoteVoiceSourceContext: Sendable {
 }
 
 struct CodexRemoteVoiceNativeCreateThreadRequest: Equatable, Sendable {
-    static var configuredProjectID: String {
-        guard let raw = Bundle.main.object(
-            forInfoDictionaryKey: "CodexProjectID"
-        ) as? String else {
-            return ""
-        }
-        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty, !value.hasPrefix("$(") else { return "" }
-        return value
+    /// Stable model-visible handle for the current native workspace. The app
+    /// needs no account-specific project identifier to enable this tool.
+    static let publicProjectID = "nightblood-configured-project"
+
+    static var isTaskCreationEnabled: Bool {
+        CodexRemoteVoiceBuildPolicy.allowsTaskCreation
     }
     static let allowedThinking: Set<String> = [
         "none", "minimal", "low", "medium", "high", "xhigh", "max",
@@ -217,9 +214,9 @@ struct CodexRemoteVoiceNativeCreateThreadRequest: Equatable, Sendable {
     init(
         params: [String: CodexRemoteVoiceJSON],
         expectedThreadID: String,
-        allowedProjectID: String = Self.configuredProjectID
+        taskCreationEnabled: Bool = Self.isTaskCreationEnabled
     ) throws {
-        guard !allowedProjectID.isEmpty,
+        guard taskCreationEnabled,
               params["threadId"]?.stringValue == expectedThreadID,
               let arguments = params["arguments"]?.objectValue,
               Set(arguments.keys).isSubset(of: [
@@ -231,7 +228,7 @@ struct CodexRemoteVoiceNativeCreateThreadRequest: Equatable, Sendable {
               let target = arguments["target"]?.objectValue,
               Set(target.keys) == ["type", "projectId", "environment"],
               target["type"]?.stringValue == "project",
-              target["projectId"]?.stringValue == allowedProjectID,
+              target["projectId"]?.stringValue == Self.publicProjectID,
               let environment = target["environment"]?.objectValue,
               Set(environment.keys) == ["type"],
               environment["type"]?.stringValue == "local"
@@ -276,6 +273,31 @@ struct CodexRemoteVoiceNativeCreateThreadRequest: Equatable, Sendable {
         [prompt, title ?? "", model ?? "", thinking ?? ""]
             .map { "\($0.utf8.count):\($0)" }
             .joined(separator: "|")
+    }
+}
+
+private enum CodexRemoteVoiceBuildPolicy {
+    static var allowsTaskCreation: Bool {
+        enabled("NightBloodEnableVoiceTaskCreation")
+    }
+
+    static var allowsAutomations: Bool {
+        enabled("NightBloodEnableVoiceAutomations")
+    }
+
+    private static func enabled(_ key: String) -> Bool {
+        guard let raw = Bundle.main.object(
+            forInfoDictionaryKey: key
+        ) else {
+            return false
+        }
+        if let value = raw as? Bool {
+            return value
+        }
+        let value = String(describing: raw)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        return value == "yes" || value == "true" || value == "1"
     }
 }
 
@@ -1629,8 +1651,7 @@ actor CodexRemoteVoiceTransport {
             return
         case .nativeProjectList:
             guard let threadID,
-                  params["threadId"]?.stringValue == threadID,
-                  let sourceContext
+                  params["threadId"]?.stringValue == threadID
             else {
                 try await sendServerResult(
                     id: id,
@@ -1642,9 +1663,7 @@ actor CodexRemoteVoiceTransport {
             }
             try await sendServerResult(
                 id: id,
-                result: Self.nativeProjectListResult(
-                    cwd: sourceContext.cwd
-                )
+                result: Self.nativeProjectListResult()
             )
             return
         case .nativeThreadCreate:
@@ -1965,6 +1984,11 @@ actor CodexRemoteVoiceTransport {
     ) async {
         defer { heartbeatToolTasks.removeValue(forKey: key) }
         do {
+            guard CodexRemoteVoiceBuildPolicy.allowsAutomations else {
+                throw CodexRemoteHeartbeatAutomationError.invalidArguments(
+                    "Voice automation changes are disabled in this build; the owner must deliberately enable NIGHTBLOOD_ENABLE_VOICE_AUTOMATIONS locally"
+                )
+            }
             guard !closing, !transportClosed,
                   let threadID,
                   params["threadId"]?.stringValue == threadID,
@@ -2428,22 +2452,22 @@ actor CodexRemoteVoiceTransport {
         return nativeToolSuccess(text: encodeToolPayload(payload))
     }
 
-    private static func nativeProjectListResult(
-        cwd: String
-    ) -> CodexRemoteVoiceJSON {
-        let label = URL(fileURLWithPath: cwd).lastPathComponent
-        let configuredProjectID =
-            CodexRemoteVoiceNativeCreateThreadRequest.configuredProjectID
+    private static func nativeProjectListResult() -> CodexRemoteVoiceJSON {
         let projects: [CodexRemoteVoiceJSON]
-        if configuredProjectID.isEmpty {
+        if !CodexRemoteVoiceNativeCreateThreadRequest.isTaskCreationEnabled {
             projects = []
         } else {
             projects = [
                 .object([
-                    "projectId": .string(configuredProjectID),
+                    "projectId": .string(
+                        CodexRemoteVoiceNativeCreateThreadRequest
+                            .publicProjectID
+                    ),
                     "projectKind": .string("local"),
-                    "label": .string(label.isEmpty ? "Current project" : label),
-                    "path": .string(cwd),
+                    "label": .string("Configured NightBlood project"),
+                    // The Realtime model needs a schema-valid project record,
+                    // not the host's real absolute path or account identifier.
+                    "path": .string("/nightblood/configured-project"),
                     "hostId": .string("local"),
                     "hostDisplayName": .null,
                     // This bounded fallback advertises only the current

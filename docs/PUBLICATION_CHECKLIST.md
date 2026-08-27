@@ -45,8 +45,9 @@ action.
 - [ ] Search for API keys, OAuth client secrets, OAuth client IDs, tokens,
   cookies, pairing codes, private keys and signed URLs.
 - [ ] Inspect Keychain service names and test fixtures for copied real values.
-- [ ] Confirm `CODEX_OAUTH_CLIENT_ID`, `CODEX_PROJECT_ID` and
-  `DEVELOPMENT_TEAM` are blank in tracked configuration.
+- [ ] Confirm `CODEX_OAUTH_CLIENT_ID` and `DEVELOPMENT_TEAM` are blank, and
+  `NIGHTBLOOD_ENABLE_VOICE_TASK_CREATION` and
+  `NIGHTBLOOD_ENABLE_VOICE_AUTOMATIONS` are `NO`, in tracked configuration.
 - [ ] Confirm no WebView receives a credential, environment ID, task ID or raw
   App Server method passthrough.
 - [ ] Confirm no listener is bound to a LAN interface and no insecure `ws://`

@@ -83,10 +83,14 @@ targets:
         # provides you with a client registration, configure it locally in
         # Xcode without committing the value.
         CODEX_OAUTH_CLIENT_ID: ""
-        # Optional saved-project identifier used only by the bounded
-        # create_thread voice tool. This is account metadata: configure it in
-        # an uncommitted local build setting, never in the public repository.
-        CODEX_PROJECT_ID: ""
+        # The bounded create_thread tool inherits the current task's native
+        # workspace and permissions. It is deliberately off unless a fork
+        # owner opts in through an uncommitted local build setting.
+        NIGHTBLOOD_ENABLE_VOICE_TASK_CREATION: NO
+        # Voice-triggered heartbeat creation/deletion writes automation files
+        # on the paired host. It is deliberately off unless a fork owner opts
+        # in through an uncommitted local build setting.
+        NIGHTBLOOD_ENABLE_VOICE_AUTOMATIONS: NO
         CURRENT_PROJECT_VERSION: 7
         MARKETING_VERSION: 1.6.0
         GENERATE_INFOPLIST_FILE: NO

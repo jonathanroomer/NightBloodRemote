@@ -155,7 +155,7 @@ struct DirectSettingsView: View {
                 } header: {
                     Text("Codex task")
                 } footer: {
-                    Text("The task identity remains native. The face WebView receives only a WebRTC answer and never sees this ID, your Mac ID or any credential.")
+                    Text("A pasted link is reduced to its task UUID before storage. The task identity remains native; the face WebView receives only a WebRTC answer and never sees this ID, your Mac ID or any credential.")
                 }
             }
             .navigationTitle("Connection")
