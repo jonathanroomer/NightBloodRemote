@@ -3,7 +3,6 @@ import XCTest
 
 final class CodexRemoteVoiceServerRequestRouteTests: XCTestCase {
     private let threadID = "11111111-2222-3333-4444-555555555555"
-    private let projectID = "12345678-1234-1234-1234-1234567890ab"
 
     func testDeviceAttestationStaysOnTheIPhone() {
         XCTAssertEqual(
@@ -82,7 +81,7 @@ final class CodexRemoteVoiceServerRequestRouteTests: XCTestCase {
         let request = try CodexRemoteVoiceNativeCreateThreadRequest(
             params: createThreadParams(),
             expectedThreadID: threadID,
-            allowedProjectID: projectID
+            taskCreationEnabled: true
         )
         XCTAssertEqual(request.prompt, "Please investigate this.")
         XCTAssertEqual(request.title, "Voice task")
@@ -103,7 +102,7 @@ final class CodexRemoteVoiceServerRequestRouteTests: XCTestCase {
             try CodexRemoteVoiceNativeCreateThreadRequest(
                 params: worktree,
                 expectedThreadID: threadID,
-                allowedProjectID: projectID
+                taskCreationEnabled: true
             )
         )
 
@@ -119,7 +118,15 @@ final class CodexRemoteVoiceServerRequestRouteTests: XCTestCase {
             try CodexRemoteVoiceNativeCreateThreadRequest(
                 params: otherProject,
                 expectedThreadID: threadID,
-                allowedProjectID: projectID
+                taskCreationEnabled: true
+            )
+        )
+
+        XCTAssertThrowsError(
+            try CodexRemoteVoiceNativeCreateThreadRequest(
+                params: createThreadParams(),
+                expectedThreadID: threadID,
+                taskCreationEnabled: false
             )
         )
     }
@@ -128,12 +135,12 @@ final class CodexRemoteVoiceServerRequestRouteTests: XCTestCase {
         let first = try CodexRemoteVoiceNativeCreateThreadRequest(
             params: createThreadParams(),
             expectedThreadID: threadID,
-            allowedProjectID: projectID
+            taskCreationEnabled: true
         )
         let second = try CodexRemoteVoiceNativeCreateThreadRequest(
             params: createThreadParams(),
             expectedThreadID: threadID,
-            allowedProjectID: projectID
+            taskCreationEnabled: true
         )
         XCTAssertEqual(first.fingerprint, second.fingerprint)
     }
@@ -163,7 +170,10 @@ final class CodexRemoteVoiceServerRequestRouteTests: XCTestCase {
                 "thinking": .string("low"),
                 "target": .object([
                     "type": .string("project"),
-                    "projectId": .string(projectID),
+                    "projectId": .string(
+                        CodexRemoteVoiceNativeCreateThreadRequest
+                            .publicProjectID
+                    ),
                     "environment": .object([
                         "type": .string("local"),
                     ]),

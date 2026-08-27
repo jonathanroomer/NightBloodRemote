@@ -18,6 +18,12 @@ bundled WebView receives only a WebRTC answer, media events and bounded face
 state. It receives no OAuth token, controller token, environment ID, task ID,
 raw App Server method name, shell field or approval response.
 
+The Realtime model can nevertheless request the narrowly implemented native
+task tools described in [Connections](docs/CONNECTIONS.md). Their prompts,
+task messages and receipts cross the controller/model boundary. The app does
+not require an account-specific project ID; host absolute paths remain native,
+and model-visible project listing uses a fixed synthetic alias and path.
+
 ## Implemented safeguards
 
 - non-exportable Secure Enclave P-256 device key;
@@ -31,6 +37,11 @@ raw App Server method name, shell field or approval response.
 - no automatic retry after an uncertain pairing, start or stop mutation;
 - bounded WebSocket frames, SDP, prompts, chunks and session duration;
 - no arbitrary App Server method or approval route from the WebView;
+- task creation disabled unless the fork owner sets
+  `NIGHTBLOOD_ENABLE_VOICE_TASK_CREATION=YES` in an uncommitted local build,
+  with only the synthetic project alias exposed to Realtime;
+- heartbeat creation/deletion disabled unless the fork owner separately sets
+  `NIGHTBLOOD_ENABLE_VOICE_AUTOMATIONS=YES` in an uncommitted local build;
 - background lifecycle checks and explicit session teardown.
 
 ## Known limitations
@@ -43,6 +54,13 @@ raw App Server method name, shell field or approval response.
   experimental and unsupported for production workloads.
 - A selected Codex task may still perform powerful actions according to its
   own configuration. Use a least-privilege task, sandbox and approval policy.
+- Once the user passes the foreground Face ID gate, enabled Voice task and
+  automation tools do not require a separate confirmation or biometric prompt
+  per operation. Task creation is persistent; enabled automation operations
+  write to or remove their owned heartbeat directory on the paired host.
+- Task prompts and bounded task titles/messages are sent through the
+  experimental controller and Realtime model path. The paired Codex host may
+  retain them under its normal task history and retention behaviour.
 - Compromise of the iPhone, Mac, OpenAI account or upstream service remains
   outside this app's protection boundary.
 

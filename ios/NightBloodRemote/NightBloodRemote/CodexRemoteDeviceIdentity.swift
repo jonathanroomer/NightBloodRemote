@@ -68,8 +68,8 @@ enum CodexRemoteDeviceKeyError: LocalizedError, Sendable {
             "Face ID did not authorise use of the Codex Remote device key."
         case .secureEnclaveUnavailable(let detail):
             "The iPhone could not create a Secure Enclave device key: \(detail)"
-        case .cleanupFailed(let keyID, let detail):
-            "A failed Secure Enclave key could not be removed (\(keyID)): \(detail)"
+        case .cleanupFailed:
+            "A failed Secure Enclave device key could not be removed safely."
         case .unexpectedKeyProtection:
             "The stored Codex Remote device key is not protected by Secure Enclave."
         case .unexpectedPublicKey:

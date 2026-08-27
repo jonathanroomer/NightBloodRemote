@@ -172,7 +172,14 @@ final class DirectVoiceSessionModel {
     var lastError: String?
     var taskReference: String {
         didSet {
-            UserDefaults.standard.set(taskReference, forKey: StorageKey.taskID)
+            // A pasted Codex URL can contain routing or account context that
+            // is not needed after validation. Persist only its canonical task
+            // UUID; keep invalid or partially typed input in memory only.
+            if let taskID = Self.canonicalTaskID(from: taskReference) {
+                UserDefaults.standard.set(taskID, forKey: StorageKey.taskID)
+            } else {
+                UserDefaults.standard.removeObject(forKey: StorageKey.taskID)
+            }
             refreshAvailability()
         }
     }
@@ -248,9 +255,21 @@ final class DirectVoiceSessionModel {
             .flatMap(CodexRemoteVoiceName.init(rawValue:)) ?? .cove
         marshmallowVoice = defaults.string(forKey: StorageKey.marshmallowVoice)
             .flatMap(CodexRemoteVoiceName.init(rawValue:)) ?? .sol
-        // A task ID is account metadata. Public builds start empty and retain
-        // only the value the device owner enters locally in Settings.
-        taskReference = defaults.string(forKey: StorageKey.taskID) ?? ""
+        // A task ID is account metadata. Public builds start empty. Older
+        // builds could store the complete pasted link, so canonicalise it on
+        // read and immediately discard any other stored representation.
+        let storedTaskReference = defaults.string(forKey: StorageKey.taskID)
+        if let storedTaskReference,
+           let taskID = Self.canonicalTaskID(from: storedTaskReference)
+        {
+            taskReference = taskID
+            if storedTaskReference != taskID {
+                defaults.set(taskID, forKey: StorageKey.taskID)
+            }
+        } else {
+            taskReference = ""
+            defaults.removeObject(forKey: StorageKey.taskID)
+        }
         gazeTracker.onSample = { [weak self] sample in
             guard let self else { return }
             latestGaze = sample
@@ -1124,6 +1143,9 @@ final class DirectVoiceSessionModel {
     }
 
     private static func canonicalTaskID(from reference: String) -> String? {
+        guard !reference.isEmpty, reference.utf8.count <= 4_096 else {
+            return nil
+        }
         let pattern = #"(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"#
         guard let expression = try? NSRegularExpression(pattern: pattern),
               let match = expression.firstMatch(
