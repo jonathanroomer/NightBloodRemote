@@ -71,11 +71,6 @@ I built NightBlood Remote with help from both OpenAI Codex and Anthropic Claude.
 They contributed in different ways at different stages, alongside a fairly
 unreasonable amount of iteration from me.
 
-It was a genuine collaboration between a human idea and two AI colleagues. I
-am acknowledging that openly without publishing private conversations,
-pretending every line has a neat single author or suggesting that either
-company endorses the result.
-
 ## From Blender to a live face
 
 I started the first NightBlood face in Blender. That was where I worked out the
