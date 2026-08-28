@@ -1,77 +1,101 @@
 # NightBlood Remote for iPhone
 
-NightBlood Remote is an experimental SwiftUI iPhone shell for an animated
-WebGL companion face, full-duplex WebRTC audio, local TrueDepth gaze input and
-a Lock Screen Live Activity. The repository also includes the Blender scripts
-used to establish the original face design and state vocabulary.
+NightBlood Remote was not a carefully planned or particularly well thought out
+product. It started as a fun experiment: could I give the latest voice models a
+face and a personality, inspired by some of the brilliant characters in my
+favourite books?
 
-This is a clean public-source snapshot derived from the private iOS 1.6.0
-prototype. It intentionally contains no private Git history, developer-team
-identifier, provisioning profile, device identifier, host name, bearer token,
-account identifier, personal prompt text or sampled voice clip.
+On the iPhone, that means an animated WebGL face, full-duplex WebRTC audio,
+local TrueDepth gaze input and a Lock Screen Live Activity. I have also included
+the Blender scripts I used to work out the original face design and its
+different listening, thinking, speaking and failure states.
 
-## Important connection status
+This is a clean public-source snapshot of the private iOS 1.6.0 prototype. It
+contains no private Git history, developer-team identifier, provisioning
+profile, device identifier, host name, bearer token, account identifier,
+personal prompt text or sampled voice clip.
 
-The visual application and Simulator demo are complete and buildable. The
-direct Codex Remote connection is **experimental reference code**, not a
-generally available public integration:
+## One important connection caveat
 
-- no OpenAI first-party OAuth client ID is included;
+The face works and the Simulator demo works. The direct Codex Remote connection
+is a different matter. It is **experimental reference code**, not a generally
+available public integration.
+
+In particular:
+
+- There is no OpenAI first-party OAuth client ID in this repository.
 - OpenAI does not currently document a public registration flow for a
-  third-party Codex Remote iPhone controller;
-- the private relay route also requires third-party DeviceCheck acceptance;
-- task creation and host automation mutation are separately disabled by
-  default and require deliberate local configuration;
-- do not copy a client ID from Codex, ChatGPT or another installed app.
+  third-party Codex Remote iPhone controller.
+- The private relay route also requires third-party DeviceCheck acceptance.
+- Task creation and host automation changes are disabled by default. Both need
+  deliberate local configuration.
+- Please do not borrow a client ID from Codex, ChatGPT or another installed
+  application. That is not a clever shortcut. It is someone else's identity.
 
 The supported public Codex integration surface is Codex App Server. Its remote
-WebSocket transport is documented but experimental; this repository does not
-yet implement that alternative transport. Read [Connections](docs/CONNECTIONS.md)
-before attempting a real account connection.
+WebSocket transport is documented, although still experimental. This repository
+does not yet implement that alternative transport. Read
+[Connections](docs/CONNECTIONS.md) before trying to connect a real account.
+
+One further privacy point: App Server failure messages can include diagnostic
+details such as local paths, and those messages may travel through the Realtime
+service. Only use the experimental connection with a host whose diagnostic
+disclosure you are comfortable with.
 
 ## Lore and origin
 
-The name **Nightblood** comes from Nightblood, the gloriously enthusiastic
-sword in Brandon Sanderson's Cosmere. This is a fan-made tribute, not an
-official Cosmere product, and the face, code and voice prompt here are original
-project work rather than a reproduction of the character or Sanderson's text.
+The name is not subtle. **Nightblood** is the gloriously enthusiastic sword
+from Brandon Sanderson's Cosmere.
 
-The second face is **Marshmallow**. My two-year-old son named that one, which is
-both the entire naming process and a difficult result to improve upon.
+This is a fan-made tribute, not an official Cosmere product. The face, code and
+voice prompt are original project work, not a reproduction of the character,
+Sanderson's writing or anyone else's artwork.
+
+My two-year-old son named the second face **Marshmallow**. That was the whole
+naming process. I have no notes.
 
 ## My first open-source project
 
-This is my first ever open-source project. It began as a personal experiment:
-could an AI companion feel less like a chat window and more like a small,
-living presence? Releasing it is an invitation to learn in public, improve the
-rough edges together and see what other people make from the same idea.
+This is also my first ever open-source project.
 
-## Built as a collaboration
+It started with a slightly odd question: could an AI companion feel less like a
+chat window and more like a small living presence? I am releasing it because I
+want to learn in public, improve the rough edges and see what other people make
+from the same starting point.
 
-NightBlood Remote was developed with both OpenAI Codex and Anthropic Claude,
-with each contributing in different ways at different stages. It was a real
-team effort between a human idea, two AI collaborators and a great deal of
-iteration. This repository presents the resulting work without publishing
-private conversations or attempting line-by-line attribution.
+There will be rough edges. I believe that is traditional.
+
+## Built with Codex and Claude
+
+I built NightBlood Remote with help from both OpenAI Codex and Anthropic Claude.
+They contributed in different ways at different stages, alongside a fairly
+unreasonable amount of iteration from me.
+
+It was a genuine collaboration between a human idea and two AI colleagues. I
+am acknowledging that openly without publishing private conversations,
+pretending every line has a neat single author or suggesting that either
+company endorses the result.
 
 ## From Blender to a live face
 
-The first NightBlood face was developed in Blender: stage, light, eye shape,
-smoke, drift and a vocabulary of listening, thinking, speaking and failure
-states. Blender became the visual laboratory, not the shipping renderer. The
-accepted look was then translated into a live WebGL shader so it could react at
-frame rate to gaze, voice amplitude and conversation state on the phone.
+I started the first NightBlood face in Blender. That was where I worked out the
+stage, lighting, eye shape, smoke, drift and the visual language for listening,
+thinking, speaking and failure.
 
-That split remains one of the most useful ideas in the project: use Blender to
-discover and judge the character, then express the final visual grammar as
-small runtime parameters. The complete route is in
+Blender was the laboratory, not the final renderer. Once the face felt right, I
+translated the look into a live WebGL shader that could react at frame rate to
+gaze, voice amplitude and the state of the conversation on the phone.
+
+That split turned out to be one of the most useful ideas in the project. Blender
+is where I discover and judge the character. The shipping app expresses the
+result as a small set of runtime parameters. The full route is in
 [Face creation](docs/FACE_CREATION.md).
 
 ## What I hope people try
 
-- Invent a genuinely different third face, with its own movement grammar—not
-  just a new colour palette.
-- Create better bridges from Blender material and motion studies to runtime
+- Invent a genuinely different third face with its own movement grammar, not
+  just NightBlood in a new colour.
+- Build better bridges between Blender material and motion studies and runtime
   shader parameters.
 - Add accessible alternatives for reduced motion, gaze tracking and audio-led
   animation.
@@ -82,24 +106,24 @@ small runtime parameters. The complete route is in
 
 ## What is included
 
-- SwiftUI portrait app and Live Activity extension.
-- Secure Enclave P-256 device identity and Face ID session gate.
-- Device-only Keychain stores for tokens and pairing metadata.
-- WebRTC microphone/speaker handling inside a media-only `WKWebView`.
+- A SwiftUI portrait app and Live Activity extension.
+- Secure Enclave P-256 device identity and a Face ID session gate.
+- Device-only Keychain storage for tokens and pairing metadata.
+- WebRTC microphone and speaker handling inside a media-only `WKWebView`.
 - Two live WebGL faces with gaze, state, colour and amplitude animation.
-- Generic procedural startup chimes; no third-party audio samples.
+- Generic procedural startup chimes with no third-party audio samples.
 - Blender 5.2 scene-generation and rendering scripts.
 - Unit tests for prompt, lifecycle, routing and heartbeat behaviour.
-- A repeatable local privacy/secret scan.
+- A repeatable local privacy and secret scan.
 
 ## Requirements
 
-- macOS with Xcode 26 or a compatible version supporting Swift 6 and iOS 18.
+- macOS with Xcode 26, or a compatible version supporting Swift 6 and iOS 18.
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen) 2.45 or later.
 - Node.js 20.19 or later (or 22.12 or later) and npm.
-- A physical Face ID iPhone for Secure Enclave, DeviceCheck, TrueDepth and
-  real microphone/speaker testing.
-- Blender 5.2 or later only if you want to regenerate the design studies.
+- A physical Face ID iPhone for Secure Enclave, DeviceCheck, TrueDepth and real
+  microphone and speaker testing.
+- Blender 5.2 or later, but only if you want to regenerate the design studies.
 
 ## Build the safe Simulator demo
 
@@ -109,12 +133,14 @@ make ios-project
 open ios/NightBloodRemote/NightBloodRemote.xcodeproj
 ```
 
-Choose the `NightBloodRemote` scheme and an iPhone Simulator. The Simulator is
-for face, layout and deterministic lifecycle work; it cannot prove Secure
-Enclave, Face ID, DeviceCheck, TrueDepth or real two-way audio.
+Choose the `NightBloodRemote` scheme and an iPhone Simulator.
 
-The generated `.xcodeproj` is deliberately ignored. This prevents local Apple
-team and signing data from entering commits.
+The Simulator is useful for the faces, layout and deterministic lifecycle work.
+It cannot prove Secure Enclave, Face ID, DeviceCheck, TrueDepth or real two-way
+audio.
+
+The generated `.xcodeproj` is deliberately ignored so that local Apple team
+and signing data do not wander into a commit.
 
 ## Before a physical-device build
 
@@ -126,34 +152,35 @@ team and signing data from entering commits.
 4. Leave `CODEX_OAUTH_CLIENT_ID` blank unless OpenAI has issued an OAuth client
    registration for this exact application.
 5. Leave `NIGHTBLOOD_ENABLE_VOICE_AUTOMATIONS` set to `NO` unless you have
-   reviewed and accepted the bounded host mutation described in Connections.
+   reviewed and accepted the bounded host changes described in Connections.
 6. Leave `NIGHTBLOOD_ENABLE_VOICE_TASK_CREATION` set to `NO` unless you have
    reviewed and accepted persistent task creation with inherited permissions.
-7. Regenerate the project, build, and inspect the signing summary before
+7. Regenerate the project, build it and inspect the signing summary before
    installing it.
 
-## Fork setup: deliberate blanks, not broken code
+## Fork setup: the blanks are deliberate
 
 The public snapshot removes every value that identified the original Apple
 developer, iPhone, Mac, Codex account, task or saved project. A fork therefore
-needs its own local configuration:
+needs its own local configuration.
 
 | Blank or example | What a fork should do |
 |---|---|
-| `com.example.nightblood.remote` | replace with bundle IDs controlled by the fork owner |
-| `DEVELOPMENT_TEAM: ""` | select the fork owner's team in the ignored generated Xcode project |
-| `CODEX_OAUTH_CLIENT_ID: ""` | leave blank for the demo unless OpenAI explicitly issues one for that application |
-| `NIGHTBLOOD_ENABLE_VOICE_TASK_CREATION: NO` | keep `NO` unless the fork owner deliberately enables persistent Voice task creation in an ignored local build setting; no project ID is needed |
-| `NIGHTBLOOD_ENABLE_VOICE_AUTOMATIONS: NO` | keep `NO` unless the fork owner deliberately enables Voice heartbeat creation/deletion in an ignored local build setting |
-| empty Codex task field | paste a task link or task UUID locally in Settings before a real session; only its canonical UUID is persisted |
-| no generated `.xcodeproj` | run `make ios-project`; do not commit the result |
-| no `.blend` or rendered face files | regenerate studies from the included Blender scripts |
+| `com.example.nightblood.remote` | Replace it with bundle IDs controlled by the fork owner |
+| `DEVELOPMENT_TEAM: ""` | Select the fork owner's team in the ignored generated Xcode project |
+| `CODEX_OAUTH_CLIENT_ID: ""` | Leave it blank for the demo unless OpenAI explicitly issues one for that application |
+| `NIGHTBLOOD_ENABLE_VOICE_TASK_CREATION: NO` | Keep `NO` unless the fork owner deliberately enables persistent Voice task creation in an ignored local build setting. No project ID is needed |
+| `NIGHTBLOOD_ENABLE_VOICE_AUTOMATIONS: NO` | Keep `NO` unless the fork owner deliberately enables Voice heartbeat creation and deletion in an ignored local build setting |
+| Empty Codex task field | Paste a task link or task UUID locally in Settings before a real session. Only its canonical UUID is persisted |
+| No generated `.xcodeproj` | Run `make ios-project` and do not commit the result |
+| No `.blend` or rendered face files | Regenerate the studies from the included Blender scripts |
 
-Expected safe-demo behaviour is that both faces build and render while account
-sign-in reports that no Codex Remote OAuth client ID is configured. That is an
-intentional boundary, not a missing source file. Do not “repair” it by copying
-an identifier from Codex, ChatGPT, this project's private history or somebody
-else's build.
+The expected safe-demo behaviour is for both faces to build and render while
+account sign-in reports that no Codex Remote OAuth client ID is configured.
+That is intentional, not a missing source file.
+
+Please do not “repair” it by copying an identifier from Codex, ChatGPT, this
+project's private history or somebody else's build.
 
 After changing a fork, run:
 
@@ -164,19 +191,22 @@ make audit
 make simulator-build
 ```
 
-If the face resource is missing, run `npm --prefix app/ui run build:ios-direct`
-and regenerate the Xcode project. If signing fails, inspect only your local
-bundle IDs, team and profiles. If a real connection fails, use the staged
-diagnosis in [Connections](docs/CONNECTIONS.md); do not weaken the native/WebView
-boundary, add a LAN listener or retry an uncertain pairing mutation.
+If the face resource is missing, run
+`npm --prefix app/ui run build:ios-direct` and regenerate the Xcode project.
 
-Enabling `NIGHTBLOOD_ENABLE_VOICE_TASK_CREATION` lets the Realtime model request
-persistent local task creation using the paired host's existing workspace and
-permission context. Enabling Voice automations additionally permits owned
-heartbeat files to be created or deleted. Neither operation receives a
-separate Face ID prompt after the session starts. Read the complete bounded-
-authority section in [Connections](docs/CONNECTIONS.md) before enabling either
-feature.
+If signing fails, inspect only your local bundle IDs, team and profiles. If a
+real connection fails, use the staged diagnosis in
+[Connections](docs/CONNECTIONS.md). Do not weaken the native/WebView boundary,
+add a LAN listener or retry a pairing change when the outcome is uncertain.
+
+Enabling `NIGHTBLOOD_ENABLE_VOICE_TASK_CREATION` lets the Realtime model ask
+the paired host to create persistent local tasks using its existing workspace
+and permission context.
+
+Enabling Voice automations also permits the app to create or delete its own
+heartbeat files on the paired host. Neither operation gets a separate Face ID
+prompt after the session has started. Read the full bounded-authority section
+in [Connections](docs/CONNECTIONS.md) before enabling either feature.
 
 ## Documentation
 
@@ -198,12 +228,12 @@ make simulator-build
 make test-build
 ```
 
-`make audit` is intentionally conservative. Review every exception manually;
-a passing script is not proof that a release is safe.
+`make audit` is intentionally conservative. Review every exception yourself.
+A passing script is useful evidence, not proof that a release is safe.
 
-`make test-build` proves the test target compiles without starting a device.
-To execute the unit tests, first boot a Simulator you have chosen, then use its
-exact name:
+`make test-build` proves that the test target compiles without starting a
+device. To run the tests, first boot a Simulator you have chosen and then use
+its exact name:
 
 ```bash
 xcrun simctl list devices available
@@ -215,8 +245,13 @@ Enclave, DeviceCheck, TrueDepth, background audio or real WebRTC media.
 
 ## Licence and names
 
-Code, original scripts, procedural chimes and included original visual assets
-are available under the MIT Licence; see [LICENSE](LICENSE) and [NOTICE](NOTICE.md).
+The code, original scripts, procedural chimes and included original visual
+assets are available under the MIT Licence. See [LICENSE](LICENSE) and
+[NOTICE](NOTICE.md).
+
 OpenAI, ChatGPT and Codex are trademarks of OpenAI. This project is independent
-and is not endorsed by OpenAI. Review the project and character names before a
-public launch; the licence does not grant rights in third-party marks.
+and is not endorsed by OpenAI.
+
+Please review the project and character names before a public launch. The
+licence does not grant rights in anyone else's marks, however enthusiastic the
+sword may be.
