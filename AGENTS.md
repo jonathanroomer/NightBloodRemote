@@ -77,7 +77,7 @@ only the owner's authorised choice. Do not keep changing unrelated settings.
    selection before and after the request. Never substitute the setup agent's
    UUID or a public conversation-share link. Tap Done and wait for desktop
    attachment and Ready to talk.
-   When changing hosts, stop Voice and use **Pair another Mac** (build 27),
+   When changing hosts, stop Voice and use **Pair another Mac** (build 27 or later),
    then confirm the new host and choose its task. Keep sign-in/enrolment intact.
    Refresh only lists existing pairings. Never reset an uncertain code claim.
 8. **Verify the result.** Test audible two-way voice and the intended Mac task
@@ -114,5 +114,7 @@ For code changes, run relevant checks from CONTRIBUTING.md. Project regeneration
 replaces local Xcode edits, so preserve/reapply signing choices. Do not commit
 generated projects, signing profiles, private prompts, real task/device IDs or
 private repository history. Report exact tested combinations and pending checks.
-The setup lessons document records candidate fixes that are not released yet.
+The setup lessons document records the build 28 release, physical acceptance
+and remaining compatibility limits. Do not describe untested signing teams or
+future desktop versions as verified.
 Do not push or publish changes unless the owner requests it.

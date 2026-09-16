@@ -1,4 +1,4 @@
-# Setup lessons and remaining checks, 16 September 2026
+# Build 28 setup lessons and verification, 16 September 2026
 
 This is the handover from physical setup troubleshooting. The repeatable order
 is in [AGENTS.md](../AGENTS.md), with user-facing steps in [Setup](SETUP.md).
@@ -15,7 +15,7 @@ while testing another device. These notes contain no real account/device IDs.
 | Device preparation | Trust alone did not enable development. A locked device can also block preparation. | Enable Developer Mode, restart, confirm Turn On and unlock to the Home Screen. Read the underlying Xcode device-preparation error rather than repeatedly rebuilding. |
 | Foreground authentication | The second phone later stopped at “Face ID required” before any Remote attempt. The tester resolved it and reached the earlier desktop error. | Check the local Face ID gate separately from Mac access. Passcode unlock is insufficient for the current app gate. Preserve the enrolled identity; a generic biometrics error is not evidence that pairing or Mac permissions changed. |
 | Provisioning | A new phone needed a matching development profile. | Use automatic signing/device registration or the Apple developer portal. If downloaded manually, confirm the actual file exists locally and includes the intended phone, App ID/team and required capabilities before building. A browser Download click is not proof the build tools have the file. |
-| CarPlay | The original phone works in the car. The second phone's phone-only signed app and wildcard profile omit the CarPlay entitlement, so it does not appear there. | Keep CarPlay enabled by default in Git. Explain the capability/App ID/profile/device steps before installation, and the missing car app when deliberately choosing phone-only. Verify both signed entitlement and profile for each target phone. Free Personal Team and another team's DeviceCheck acceptance remain unverified. |
+| CarPlay | The original phone works in the car. The second phone initially had a phone-only signed app and wildcard profile without CarPlay, so it did not appear there. An explicit App ID and matching CarPlay profile fixed it; the owner then confirmed it worked fully in the car. | Keep CarPlay enabled by default in Git. Explain the capability/App ID/profile/device steps before installation, and the missing car app when deliberately choosing phone-only. Verify both signed entitlement and profile for each target phone. Free Personal Team and another team's DeviceCheck acceptance remain unverified. |
 | Workspace access | Another account had Codex access but immediate enrolment HTTP 403. Remote Control was disabled by its workspace administrator. | Check workspace/role Remote permission before phone enrolment, then complete this Mac's own Remote setup. Once enabled, that test reached enrolment, pairing and host confirmation. Not every 403 necessarily has this cause. |
 | Task selection | A confirmed Mac still did not make Voice ready while the task field was empty. | Require the local task link/UUID for the exact paired host/account. Pairing status and Ready to talk are different. Preserve task permissions if asking its agent for the UUID. |
 | Task permissions | The original working task changed from full access to a restricted workspace profile during testing. Its helper was then denied. | Check live task settings separately from workspace Remote permission. An exact-policy probe reproduced the denial. Restoring that owner's approved original task-specific full access restored phone voice without another install. Keep approval settings and global defaults intact. |
@@ -47,55 +47,61 @@ shows a bounded, actionable error before Voice preparation. It must fail
 clearly rather than automatically grant full access. Preserve the owner's
 ability to choose a restricted task and normal approval handling.
 
-## Current verification and release boundary
+## Build 28 acceptance and compatibility
 
-- The original phone remains on build 26. Settings open/close, Settings during
-  voice, two conversations, correct transcript and voice after reopening passed.
-  Its approved full-access/on-request/auto-review task settings are unchanged.
-- The second phone's voice test used build 27, another OpenAI account and the existing Apple
-  developer team. It completed enrolment and pairing after workspace Remote was
-  enabled. The older host was abandoned after its IPC endpoint mismatch was
-  confirmed; no legacy compatibility was added.
-- The second phone then paired a current desktop profile. Build 27 adds the
-  missing Pair another Mac recovery action without deleting sign-in or enrolment.
-  Unknown pairing outcomes remain protected against reset/replay. The new task
-  began with Workspace access and denied the helper. Its owner explicitly chose
-  task-specific Full access, preserving its existing granular approvals and
-  reviewer. Audible voice and the transcript in that task now pass. Final
-  reopen/Settings/second-conversation confirmation is pending.
-- The separate desktop profile initially had a Codex-home path too long for
-  its Unix socket. A shorter profile path resolved its EINVAL listen error.
-  This is a custom-profile troubleshooting check, not a normal setup step.
-  Preserve credentials and app data within that profile; never copy another
-  user's authentication or change the working profile to fix a test instance.
-- Build 27 passes 39 focused Swift lifecycle/CarPlay tests, the source privacy
-  audit, signed device build and installed-version verification. The helper is
-  unchanged from the 11 passing helper tests. These changes are saved in the
-  public-source experiment and have not yet been pushed as a public update.
-- The owner confirms the original phone works in the car. CarPlay on the
-  second phone, another Apple signing team and free Personal Team signing
-  remain unverified. The second phone did validate the local phone-only
-  entitlement setting with the existing developer team. Simulator checks alone
-  cannot prove Secure Enclave, DeviceCheck, Face ID, relay identity or audio.
-- The second phone has since received a local build 28 with the same app code
-  and bundle identity, now using an explicit App ID and a development profile
-  that includes its device and CarPlay capability. Signed entitlement/profile
-  checks and installed-version verification passed. Its existing Keychain
-  identity is unchanged; phone reopen and physical-car acceptance are pending.
+- The original phone passed Settings open/close, Settings during voice, two
+  conversations, correct transcript, voice after reopening and CarPlay. Its
+  approved task permissions and approvals were preserved.
+- The second phone used another OpenAI account and the existing Apple team.
+  After workspace Remote was enabled, it completed enrolment and pairing.
+  The older desktop was abandoned after the endpoint mismatch was confirmed;
+  no legacy compatibility was added.
+- On the current desktop, Pair another Mac preserved sign-in and enrolment.
+  The new task initially denied the helper under Workspace access. The owner
+  explicitly chose task-specific Full access, preserving its existing granular
+  approvals and reviewer. Audible voice and the intended transcript passed.
+- The second phone then received build 28 with its existing bundle and Keychain
+  identity, an explicit App ID and a profile including that phone and CarPlay.
+  Signed entitlements, profile contents and installed version were verified.
+  The owner confirmed it worked fully in physical CarPlay. This is user-reported
+  end-to-end acceptance; individual locked-phone, mute and recovery subcases
+  were not separately recorded for this phone.
+- The second phone runs iOS 26.6.2. Both current hosts use desktop 26.908.70816
+  (9275), bundled App Server 0.154.0-alpha.6.2. The app code passed 39 focused
+  Swift lifecycle/CarPlay tests and 11 desktop-helper tests. Build 28 retains
+  the tested build 27 app logic and enables CarPlay in the second phone's local
+  signing configuration. Public source has no personal signing values.
+- Another Apple signing team, free Personal Team signing and future desktop
+  versions remain unverified. Each fork must perform its own enrolment, voice
+  and physical-car checks; simulator success does not prove these.
 
-## Resume in this order
+## Additional host-profile lesson
 
-1. Preserve both accounts, selected tasks and their approved permission settings.
-   Do not use either voice task for diagnostic model turns or send it the other
-   task's UUID. Read live policies before and after a settings operation.
-2. Finish the second phone's reopen/Settings/second-conversation check.
-3. Review and publish only sanitised source fixes, preserving blank team,
-   generic bundle IDs, empty task defaults and disabled optional mutation tools.
-4. Keep the exact tested combinations and outstanding signing/car tests visible.
-   A current desktop is required; do not resume work on legacy endpoint support.
+A separate desktop test profile initially used a Codex-home path too long for
+its Unix socket. A shorter profile path resolved the EINVAL listen error.
+This is a custom-profile troubleshooting check, not a normal setup step.
+Preserve credentials and app data within that profile; never copy another
+user's authentication or change the working profile to fix a test instance.
+A separate macOS user or another current Mac is the simpler documented test
+route. Neither needs a modified desktop binary.
 
-Additional improvements to consider after the physical check: a persistent
-ignored signing configuration, distinct phone-only/CarPlay schemes, an actual
-setup/preflight command, clearer task-selection onboarding and the policy
-preflight above. These are follow-up work, not commands or features available
-in the interim public fix.
+## Keep future installs repeatable
+
+Use the ordered [setup guide](SETUP.md) and [agent instructions](../AGENTS.md):
+current desktop and workspace Remote permission; host Remote enablement;
+selected task and agreed permissions; build/signing choice; Trust and Developer
+Mode; browser authorisation and enrolment; one-time pairing and exact host
+confirmation; task UUID; phone voice verification; then parked CarPlay.
+
+CarPlay stays enabled by default. Explain the Apple capability/profile/device
+step before installation. Use phone-only signing only as an explicit choice,
+with the consequence that the app will not appear in CarPlay. When upgrading,
+preserve ignored signing settings, bundle identity, Keychain, pairing and the
+voice task's approved permissions. Regenerating the Xcode project overwrites
+local signing edits, so record and reapply them.
+
+Build 28 includes the Settings lifecycle fix, Pair another Mac recovery and
+bounded enrolment/attachment diagnostics. A persistent ignored signing config,
+dedicated signing schemes, a setup/preflight command and automatic detection
+of incompatible task policy remain future improvements, not existing commands
+or guarantees. No code automatically broadens a task's permissions.

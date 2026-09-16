@@ -8,9 +8,10 @@ was empty. The project now supplies the public application identifier from
 It is not an account credential. You authorise your own account in the browser.
 No personal OAuth client ID or OpenAI API key is needed for this route.
 
-Build 27 has completed enrolment, pairing, audible two-way voice and the correct
-Mac transcript on a second physical iPhone using another OpenAI account and
-the existing Apple developer team. Another Apple signing team and free
+Build 28 has completed enrolment, pairing, audible two-way voice, the correct
+Mac transcript and physical CarPlay use on a second iPhone with another OpenAI
+account and the existing Apple developer team. The second phone runs iOS 26.6.2;
+the verified desktop is 26.908.70816 (9275). Another Apple signing team and free
 Personal Team signing remain unverified. The Remote protocol is experimental
 and upstream acceptance can vary. Report the stage that fails rather than
 assuming a build or successful sign-in proves the whole connection works.
@@ -142,7 +143,7 @@ make ios-project
 open ios/NightBloodRemote/NightBloodRemote.xcodeproj
 ```
 
-There is no `make setup` or `make doctor` command in this interim release.
+There is no `make setup` or `make doctor` command; follow the steps below.
 
 In the generated Xcode project:
 
@@ -232,7 +233,7 @@ an approval needs attention.
 Test Stop, a second conversation, Settings open/close, reopening and Reconnect.
 Opening Settings should preserve a healthy prepared connection. The 16 September
 fix removes an unnecessary Settings refresh and passed the original phone's
-physical retest. Build 27 also passed voice and transcript on the second account. See
+physical retest. Build 28 also passed phone voice/transcript and CarPlay on the second account. See
 [setup lessons](SETUP_LESSONS_2026-09-16.md) for release status.
 A mobile-data test can then check the relay outside the local Wi-Fi network.
 No earlier action should be replayed.
@@ -247,7 +248,7 @@ from the new Mac. You can also choose **Choose an already paired Mac**.
 
 Refresh paired Macs only lists existing pairings; it cannot pair a new host.
 Older builds omitted the return to code entry after confirming a Mac. Update
-to build 27 for that recovery action. An uncertain or unverified code claim
+to build 28 for that recovery action. An uncertain or unverified code claim
 must be reconciled first; the action does not reset or replay it.
 
 ## 4. Optional features and CarPlay
@@ -330,12 +331,12 @@ shared Keychain access groups or copy credentials between them.
 | Pairing outcome unknown | Refresh paired-Mac state before deciding on another attempt. |
 | Mac paired, but Voice says Choose a Codex task / Codex Remote unavailable | Fill in the required Codex task link or UUID field with a task from that Mac, then tap Done and wait for preparation. Earlier builds misleadingly called the pairing stage Ready for NightBlood Voice even with this field empty. Actual voice readiness is Ready to talk. |
 | No online Mac | Check same account/workspace, Remote enabled, desktop app running and Mac awake; refresh. |
-| Selected Mac unavailable and you want a different Mac | In build 27, stop voice and use **Pair another Mac**, then explicitly confirm the new host and choose its own task. Keep your existing sign-in and enrolment. Refresh alone cannot add a new pairing. |
+| Selected Mac unavailable and you want a different Mac | In build 28, stop voice and use **Pair another Mac**, then explicitly confirm the new host and choose its own task. Keep your existing sign-in and enrolment. Refresh alone cannot add a new pairing. |
 | Desktop attachment failed | Check `/usr/bin/python3`, the selected task and desktop compatibility. Keep the task open on the paired Mac. Use a current desktop version approved for that machine; if company policy blocks an update, test on an approved current installation elsewhere. Newer NightBlood builds report a fixed failure code to distinguish helper execution, desktop handshake, task attachment and timeout. Do not change IPC socket permissions or patch the desktop app. |
 | `desktop_permission_denied`, or an old build's `desktop_unavailable` after previously working | Compare the selected task's live permission profile with its known working settings. Check the helper under that exact policy. Follow the task-specific permission procedure above, preserving approvals and global defaults. |
 | `desktop_endpoint_missing` | Check the paired Mac, intended task, actual Codex home and desktop version. Older desktops may use a different socket location even when pairing works. Follow [desktop compatibility](#desktop-version-compatibility) and update the desktop app through the approved process. A CLI update alone is insufficient. Do not broaden permissions or re-enrol to fix an absent endpoint. |
-| `desktop_connection_refused`, reset, handshake failure or timeout | Check whether the desktop/socket is still alive and compatible. Record the bounded code and desktop version. Do not assume Python is missing or change signing because attachment timed out. Some detailed codes exist only in the pending diagnostic candidate. |
-| Voice works from Home but opening Settings produces a secure-connection error | Older builds unnecessarily restart setup when Settings appears. The fix passed the original phone's physical checks in build 26 and is in the public experiment; check release status before updating. In the earlier observed case, reopening the app and starting voice from Home works. This symptom does not by itself call for re-enrolment or more permission changes. |
+| `desktop_connection_refused`, reset, handshake failure or timeout | Check whether the desktop/socket is still alive and compatible. Record the bounded code and desktop version. Do not assume Python is missing or change signing because attachment timed out. Build 28 includes these bounded diagnostic codes. |
+| Voice works from Home but opening Settings produces a secure-connection error | Older builds unnecessarily restart setup when Settings appears. The fix passed the original phone's physical checks and is included in build 28; update, preserve local signing and rebuild. In the earlier observed case, reopening the app and starting voice from Home works. This symptom does not by itself call for re-enrolment or more permission changes. |
 | Voice attestation failed | Check physical device/signing and record the redacted failure. Never invent a DeviceCheck proof. |
 | CarPlay signing error | Use the phone-only setting until your App ID/profile has Apple's approval. |
 | Voice works on the phone but NightBlood is absent from CarPlay | A phone-only build omits the required entitlement. Complete the CarPlay signing steps, including this phone in the profile, and reinstall; do not change Codex pairing to fix app visibility. |

@@ -10,15 +10,15 @@ local TrueDepth gaze input and a Lock Screen Live Activity. I have also included
 the Blender scripts I used to work out the original face design and its
 different listening, thinking, speaking and failure states.
 
-This privacy-sanitised public source follows iOS 1.8.2 build 23 with build 27
-setup and recovery fixes. It
-contains no private Git history, developer-team identifier, provisioning
+This privacy-sanitised public source is **iOS 1.8.2, build 28**, including the
+setup and recovery fixes verified on two phones and in CarPlay. It contains
+no private Git history, developer-team identifier, provisioning
 profile, device identifier, host name, bearer token, account identifier,
 personal prompt text or sampled voice clip.
 
 ## September update
 
-This snapshot follows version **1.8.2, build 23**. It adds native CarPlay,
+This update includes the CarPlay implementation introduced in build 23, with
 clearer connection errors, a Reconnect button, desktop transcript attachment,
 and smoother face rendering. The public build uses generic editable prompts,
 procedural chimes and a system terminal symbol for the intro. No private voice
@@ -45,9 +45,9 @@ Check workspace Remote Control permission, this Mac's Remote setup and the
 selected task's permissions separately. Trusting the phone also does not enable
 Developer Mode: turn it on, restart and confirm it before installing. The guide
 and [setup lessons](docs/SETUP_LESSONS_2026-09-16.md) record the required order,
-known fixes and remaining physical tests.
+known fixes and the exact tested combinations.
 
-**16 September interim fix:** earlier public builds stopped at sign-in because
+**16 September setup fix:** earlier public builds stopped at sign-in because
 `CODEX_OAUTH_CLIENT_ID` was blank. The build now includes the public application
 identifier published in [OpenAI's Codex source](https://github.com/openai/codex/blob/main/codex-rs/login/src/auth/manager.rs).
 It is not the creator's account credential. You sign into your own account;
@@ -55,11 +55,12 @@ there is no personal client ID or API key to obtain for this route. Existing
 clones need to update, regenerate the Xcode project and rebuild, preserving
 their local signing settings as described in the guide.
 
-The build 27 follow-up adds **Pair another Mac** recovery and preserves a
-healthy voice connection when opening Settings. A second physical iPhone with
-another OpenAI account completed pairing, audible voice and the correct Mac
-transcript using the existing developer team. **Another Apple signing identity
-and free Personal Team signing remain unverified.** The direct Remote protocol and voice attestation are experimental
+Build 28 includes **Pair another Mac** recovery and preserves a healthy voice
+connection when opening Settings. A second physical iPhone with another OpenAI
+account completed pairing, audible voice, the correct Mac transcript and a
+successful physical CarPlay test using the existing developer team.
+**Another Apple signing team and free Personal Team signing remain unverified.**
+The direct Remote protocol and voice attestation are experimental
 and may reject a build or change upstream. Public availability of the client ID
 is not an assurance of OpenAI support for this third-party integration.
 

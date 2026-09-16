@@ -18,7 +18,7 @@ pairing codes.
 | TrueDepth gaze | No | Yes | No |
 | Face ID and Secure Enclave behaviour | Not authoritative | Yes | No |
 | Live Activity and background audio lifecycle | Partial | Yes | No |
-| Direct Codex Remote voice | No | Experimental; second account/phone passed with existing developer team | Own ChatGPT account with Codex/Remote access |
+| Direct Codex Remote voice | No | Experimental; second account/phone and CarPlay passed with existing developer team | Own ChatGPT account with Codex/Remote access |
 | Public Codex App Server transport | Not implemented | Not implemented | Depends on your design |
 
 The repository supplies the public upstream `CODEX_OAUTH_CLIENT_ID`, with both
@@ -247,7 +247,7 @@ long-lived server API key.
   executed start/stop. Reconcile an unknown outcome before deciding whether a
   new user-authorised session is appropriate. Do not reuse an expired controller
   token or blindly replay start/stop. A Settings-only failure has a separate
-  candidate fix in the [setup lessons](SETUP_LESSONS_2026-09-16.md).
+  released fix in the [setup lessons](SETUP_LESSONS_2026-09-16.md).
 - **WebView failure:** the native session should close. Reloading the visual
   page must not inherit credentials or an unconsumed authority grant.
 

@@ -50,7 +50,7 @@ and model-visible project listing uses a fixed synthetic alias and path.
   not documented public interfaces and may change or reject third-party apps.
 - The build includes the public Codex OAuth application ID from upstream
   source. It is not a user credential or an endorsement of this integration.
-  A second account and phone passed Remote enrolment and voice with the
+  A second account and phone passed Remote enrolment, voice and CarPlay with the
   existing developer team; another signing team's acceptance remains unverified.
   Each person must authenticate and pair their own devices. Never redistribute tokens.
 - The public Codex App Server WebSocket transport is itself documented as

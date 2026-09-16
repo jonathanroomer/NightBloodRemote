@@ -1,6 +1,7 @@
-# 1.8.2 public source update
+# 1.8.2 build 28 public source update
 
-This update follows the iPhone and CarPlay implementation from build 23.
+Build 28 includes the iPhone and CarPlay implementation from build 23 plus
+the setup, connection recovery and diagnostic fixes tested on 16 September.
 It remains an experimental source project, not a ready-to-install signed app.
 
 ## Changes
@@ -33,13 +34,24 @@ Codex Remote connection retains its experimental registration and DeviceCheck
 limitations described in [Connections](CONNECTIONS.md).
 
 The [setup guide](SETUP.md) covers Mac and phone authorisation, upgrading an
-existing clone, phone-only signing and optional CarPlay setup. The build 27
-follow-up adds Pair another Mac recovery without deleting sign-in or enrolment,
+existing clone, Developer Mode, workspace Remote permission, task permissions
+and Apple CarPlay provisioning before installation. Build 28 includes
+Pair another Mac recovery without deleting sign-in or enrolment,
 preserves healthy voice when Settings opens, and distinguishes desktop failure
-codes. A second account and physical iPhone passed pairing, audible voice and
-the correct Mac transcript with the existing developer team on desktop
-26.908.70816 (9275). Another signing team and a new physical-car test remain
-unverified. This does not add a standalone App Server transport or account reset.
+codes. A second account and physical iPhone (iOS 26.6.2) passed pairing, audible
+voice, the correct Mac transcript and physical CarPlay use with the existing
+developer team on desktop 26.908.70816 (9275). The original phone also passed
+Settings, repeat conversations, reopening and CarPlay. Another signing team
+and free Personal Team signing remain unverified. This does not add a
+standalone App Server transport or account reset.
+
+The code passed 39 focused Swift lifecycle/CarPlay tests and 11 desktop-helper
+tests. The signed build and installed version were checked before the second
+phone's successful car test. Build 28 changes signing/build identity from that
+phone's phone-only build 27; its app logic is unchanged. CarPlay stays enabled
+in the public project, but every builder must supply their own approved Apple
+App ID and a profile that includes their test phone. See the consolidated
+[setup lessons](SETUP_LESSONS_2026-09-16.md).
 
 ## Build and verification
 
