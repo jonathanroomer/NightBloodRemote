@@ -10,14 +10,15 @@ local TrueDepth gaze input and a Lock Screen Live Activity. I have also included
 the Blender scripts I used to work out the original face design and its
 different listening, thinking, speaking and failure states.
 
-This is a privacy-sanitised public-source snapshot of the iOS 1.8.2 build 23 release. It
-contains no private Git history, developer-team identifier, provisioning
+This privacy-sanitised public source is **iOS 1.8.2, build 28**, including the
+setup and recovery fixes verified on two phones and in CarPlay. It contains
+no private Git history, developer-team identifier, provisioning
 profile, device identifier, host name, bearer token, account identifier,
 personal prompt text or sampled voice clip.
 
 ## September update
 
-This snapshot follows version **1.8.2, build 23**. It adds native CarPlay,
+This update includes the CarPlay implementation introduced in build 23, with
 clearer connection errors, a Reconnect button, desktop transcript attachment,
 and smoother face rendering. The public build uses generic editable prompts,
 procedural chimes and a system terminal symbol for the intro. No private voice
@@ -32,7 +33,21 @@ Start with the [step-by-step setup guide](docs/SETUP.md). It covers Apple
 signing, Mac Remote settings, ChatGPT sign-in, iPhone enrolment, pairing and
 selecting the Codex task. Agents should also read [AGENTS.md](AGENTS.md).
 
-**16 September interim fix:** earlier public builds stopped at sign-in because
+**Use the latest Codex desktop app approved for your Mac.** The working setup
+was verified on desktop **26.908.70816, build 9275**. Older desktop builds can
+pair successfully but fail transcript attachment with `desktop_endpoint_missing`.
+Update the desktop app first; updating only the Codex CLI is not sufficient.
+See [desktop compatibility](docs/SETUP.md#desktop-version-compatibility) for the
+tested versions and managed-Mac guidance. Future desktop compatibility still
+needs verification because this integration uses private interfaces.
+
+Check workspace Remote Control permission, this Mac's Remote setup and the
+selected task's permissions separately. Trusting the phone also does not enable
+Developer Mode: turn it on, restart and confirm it before installing. The guide
+and [setup lessons](docs/SETUP_LESSONS_2026-09-16.md) record the required order,
+known fixes and the exact tested combinations.
+
+**16 September setup fix:** earlier public builds stopped at sign-in because
 `CODEX_OAUTH_CLIENT_ID` was blank. The build now includes the public application
 identifier published in [OpenAI's Codex source](https://github.com/openai/codex/blob/main/codex-rs/login/src/auth/manager.rs).
 It is not the creator's account credential. You sign into your own account;
@@ -40,9 +55,12 @@ there is no personal client ID or API key to obtain for this route. Existing
 clones need to update, regenerate the Xcode project and rebuild, preserving
 their local signing settings as described in the guide.
 
-This fixes the known missing-configuration error. **Fresh-account enrolment,
-pairing and two-way voice with another Apple signing identity have not yet been
-verified.** The direct Remote protocol and voice attestation are experimental
+Build 28 includes **Pair another Mac** recovery and preserves a healthy voice
+connection when opening Settings. A second physical iPhone with another OpenAI
+account completed pairing, audible voice, the correct Mac transcript and a
+successful physical CarPlay test using the existing developer team.
+**Another Apple signing team and free Personal Team signing remain unverified.**
+The direct Remote protocol and voice attestation are experimental
 and may reject a build or change upstream. Public availability of the client ID
 is not an assurance of OpenAI support for this third-party integration.
 
@@ -134,6 +152,13 @@ result as a small set of runtime parameters. The full route is in
 - Node.js 20.19 or later (or 22.12 or later) and npm.
 - A physical Face ID iPhone for Secure Enclave, DeviceCheck, TrueDepth and real
   microphone and speaker testing.
+- Developer Mode enabled on that iPhone for installation through Xcode. Enable
+  it, restart and confirm Turn On as described in [Setup](docs/SETUP.md).
+- For the experimental direct connection: Codex access and Remote Control
+  enabled for the same account/workspace on the Mac and phone. Managed
+  workspaces may require an administrator to enable Remote Control separately.
+  Complete the Mac's Remote setup before phone enrolment; see [Setup](docs/SETUP.md#1-prepare-the-mac).
+- A current Codex desktop app; see the [tested desktop version](docs/SETUP.md#desktop-version-compatibility).
 - Blender 5.2 or later, but only if you want to regenerate the design studies.
 
 ## Build the safe Simulator demo
@@ -158,8 +183,13 @@ and signing data do not wander into a commit.
 1. Follow [Setup](docs/SETUP.md) and read [Security](SECURITY.md).
 2. Generate the project, then set your own bundle identifiers and Apple team
    for the app and Live Activity extension in the ignored Xcode project.
-3. For phone-only testing without CarPlay approval, clear the app target's
-   Code Signing Entitlements build setting as described in Setup.
+3. **Choose CarPlay or phone-only before installing.** CarPlay is enabled in
+   the project by default, but Apple must approve the capability for your
+   team/app. Enable it on your explicit App ID and use a development profile
+   that includes the entitlement and the target phone. Follow the
+   [CarPlay signing steps](docs/SETUP.md#carplay-signing-and-first-launch).
+   If you choose the documented phone-only build instead, NightBlood will
+   work on the phone but **will not appear in CarPlay**.
 4. Keep the included public OAuth client configuration. Sign in to your own
    ChatGPT account on both devices.
 5. Leave `NIGHTBLOOD_ENABLE_VOICE_AUTOMATIONS` set to `NO` unless you have

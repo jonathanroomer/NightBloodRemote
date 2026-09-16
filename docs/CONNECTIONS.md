@@ -2,6 +2,9 @@
 
 For the click-by-click Mac and iPhone process, start with [Setup](SETUP.md).
 This document describes the experimental connection and its trust boundaries.
+Use the latest approved Codex desktop app; the verified working desktop is
+26.908.70816 (9275). Older versions can pair while lacking the endpoint this
+helper uses. See [desktop compatibility](SETUP.md#desktop-version-compatibility).
 The build includes one reviewed public upstream OAuth application ID. Do not
 commit account credentials, task/project IDs, Apple team IDs, host names or
 pairing codes.
@@ -15,7 +18,7 @@ pairing codes.
 | TrueDepth gaze | No | Yes | No |
 | Face ID and Secure Enclave behaviour | Not authoritative | Yes | No |
 | Live Activity and background audio lifecycle | Partial | Yes | No |
-| Direct Codex Remote voice | No | Experimental; fresh-account test pending | Own ChatGPT account with Codex/Remote access |
+| Direct Codex Remote voice | No | Experimental; second account/phone and CarPlay passed with existing developer team | Own ChatGPT account with Codex/Remote access |
 | Public Codex App Server transport | Not implemented | Not implemented | Depends on your design |
 
 The repository supplies the public upstream `CODEX_OAUTH_CLIENT_ID`, with both
@@ -65,7 +68,8 @@ It is not a personal account ID, API key or secret. Each user signs into their
 own account and creates a separate device-bound controller. Users do not need
 to extract an identifier from an installed app or obtain a personal client ID.
 The public source is evidence for the value, not evidence that OpenAI supports
-this third-party Remote integration. Independent physical setup remains to be
+this third-party Remote integration. Another account and second physical phone
+passed using the existing developer team; another signing team remains to be
 tested. Do not copy tokens, private keys or pairing records between users.
 
 Optional local settings:
@@ -111,10 +115,14 @@ error. This release does not establish universal account or signing support.
 7. **Controller session.** Native Swift performs the refresh challenge, keeps
    the short-lived controller token in memory, and opens a TLS-protected WSS
    connection to the selected environment through the relay.
-8. **App Server handshake.** The controller sends the bounded initialise
+8. **App Server handshake and desktop attachment.** The controller sends the bounded initialise
    exchange and binds all subsequent messages to the chosen account, client,
-   environment and task. When voice attestation is requested, the native
-   provider obtains a DeviceCheck token from the physical iPhone.
+   environment and task. It resumes the selected task and runs the bundled
+   desktop follower with that task's effective permission profile. Only an
+   acknowledged attachment allows Ready to talk. See the
+   [task permission check](SETUP.md#selected-task-permissions).
+   When voice attestation is requested, the native provider obtains a
+   DeviceCheck token from the physical iPhone.
 9. **Voice start.** After a foreground user tap and Face ID, the WebView makes
    one microphone/WebRTC offer. Swift sends a `thread/realtime/start` request
    using the v3/WebRTC transport and the selected native character prompt,
@@ -211,6 +219,10 @@ long-lived server API key.
 
 ## Failure and recovery
 
+- **Desktop version mismatch / endpoint missing:** update the desktop app,
+  not only its CLI. The older desktop 26.623.141536 (4753) uses a different
+  IPC location. This helper deliberately has no legacy-location fallback.
+  Follow the approved update process or use another current installation.
 - **No OAuth client ID:** update the clone, regenerate the project and rebuild.
   Check for an old local build-setting override. See [upgrade steps](SETUP.md#updating-an-existing-clone).
 - **Simulator enrolment failure:** expected. DeviceCheck, Secure Enclave,
@@ -231,8 +243,11 @@ long-lived server API key.
 - **Voice automation unavailable:** this is the safe default. Enable
   `NIGHTBLOOD_ENABLE_VOICE_AUTOMATIONS` locally only after accepting its host
   filesystem mutation and retention behaviour.
-- **WSS or realtime closes:** start a new user-authorised session. Do not reuse
-  an expired controller token or blindly replay start/stop.
+- **WSS or realtime closes:** distinguish a known failure from a possibly
+  executed start/stop. Reconcile an unknown outcome before deciding whether a
+  new user-authorised session is appropriate. Do not reuse an expired controller
+  token or blindly replay start/stop. A Settings-only failure has a separate
+  released fix in the [setup lessons](SETUP_LESSONS_2026-09-16.md).
 - **WebView failure:** the native session should close. Reloading the visual
   page must not inherit credentials or an unconsumed authority grant.
 
@@ -263,12 +278,17 @@ from the foreground phone's Face ID interaction. Review that access policy
 before distributing a fork, and provision only a least-privilege paired host.
 
 Before Voice can start, the app sends its bundled Python transcript helper via
-App Server `command/exec`. The helper reads the selected task's desktop
-transcript and streams it through the authenticated controller connection.
+App Server `command/exec`. The helper follows the selected task in the stock
+desktop and discards the received conversation snapshots on the Mac. Only small
+readiness/failure receipts cross its stdout connection. The voice transcript
+uses the existing voice event route, not a second helper transcript feed.
 This is host command execution even when optional Voice task creation and
 heartbeat mutations are disabled. It is not a general shell tool exposed by
 the phone UI. The host must support the helper endpoint and Python environment.
 The app requires the expected task and stream identity before allowing Voice.
+The helper inherits the selected task's permissions and must not silently
+replace a restricted profile with full access. See
+[selected task permissions](SETUP.md#selected-task-permissions).
 
 Ready means connection preparation completed. Talk starts a new voice session.
 Reconnect refreshes idle setup and transcript attachment. Unknown outcomes

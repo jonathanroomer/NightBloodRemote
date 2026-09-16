@@ -1,4 +1,6 @@
 import importlib.util
+import contextlib
+import io
 import json
 import os
 from pathlib import Path
@@ -7,6 +9,7 @@ import struct
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 
 
 spec = importlib.util.spec_from_file_location(
@@ -35,6 +38,17 @@ def send(connection, value):
 
 
 class DesktopTranscriptTests(unittest.TestCase):
+    def test_exception_diagnostics_exclude_arbitrary_messages(self):
+        for error, reason in [
+            (PermissionError(1, "private path"), "desktop_permission_denied"),
+            (ConnectionRefusedError(61, "private path"), "desktop_connection_refused"),
+            (ConnectionResetError(54, "private path"), "desktop_connection_reset"),
+            (TimeoutError("private path"), "desktop_socket_timed_out"),
+            (AttributeError("private response"), "desktop_invalid_reply"),
+            (OSError(9, "private path"), "desktop_io_failed"),
+        ]:
+            self.assertEqual(module.failure_reason(error), reason)
+
     def setUp(self):
         self.input_fd, self.input_writer = os.pipe()
         self.receipts = []
@@ -172,6 +186,36 @@ class DesktopTranscriptTests(unittest.TestCase):
     def test_noncanonical_task_is_rejected(self):
         with self.assertRaises(ValueError):
             module.canonical_id(TASK.replace("-", ""))
+
+    def test_missing_endpoint_reports_only_a_fixed_failure_code(self):
+        with tempfile.TemporaryDirectory(prefix="nb-missing-") as folder:
+            output = io.StringIO()
+            with patch.object(module.sys, "argv", ["helper", folder, TASK, TASK]), \
+                    contextlib.redirect_stdout(output):
+                self.assertEqual(module.main(), 1)
+            receipt = json.loads(output.getvalue())
+            self.assertEqual(receipt["event"], "failed")
+            self.assertEqual(receipt["reason"], "desktop_endpoint_missing")
+            self.assertNotIn(folder, output.getvalue())
+
+    def test_untrusted_endpoint_is_diagnosed_without_relaxing_checks(self):
+        with tempfile.TemporaryDirectory(prefix="nb-untrusted-") as folder:
+            (Path(folder) / "ipc").symlink_to(folder)
+            output = io.StringIO()
+            with patch.object(module.sys, "argv", ["helper", folder, TASK, TASK]), \
+                    contextlib.redirect_stdout(output):
+                self.assertEqual(module.main(), 1)
+            self.assertEqual(json.loads(output.getvalue())["reason"], "untrusted_desktop_endpoint")
+            self.assertNotIn(folder, output.getvalue())
+
+    def test_arbitrary_helper_exception_is_not_exposed(self):
+        output = io.StringIO()
+        with patch.object(module.sys, "argv", ["helper", "/unused", TASK, TASK]), \
+                patch.object(module, "trusted_endpoint", side_effect=RuntimeError("private-path-and-account")), \
+                contextlib.redirect_stdout(output):
+            self.assertEqual(module.main(), 1)
+        self.assertEqual(json.loads(output.getvalue())["reason"], "desktop_unavailable")
+        self.assertNotIn("private-path-and-account", output.getvalue())
 
 
 if __name__ == "__main__":

@@ -168,8 +168,8 @@ struct CodexRemoteAuthenticatedRESTClient: Sendable {
 
     func validateSuccess(_ response: CodexRemoteHTTPResponse) throws {
         guard (200...299).contains(response.statusCode) else {
-            throw CodexRemoteEnrolmentError.responseRejected(
-                statusCode: response.statusCode
+            throw CodexRemoteEnrolmentError.enrolmentRequestRejected(
+                CodexRemoteEnrolmentRejection(stage: .start, response: response)
             )
         }
     }
@@ -424,8 +424,8 @@ actor CodexRemoteStepUpOAuth: CodexRemoteStepUpAuthorizing {
         networkTask = nil
         try ensureActive(operationID)
         guard (200...299).contains(response.statusCode) else {
-            throw CodexRemoteEnrolmentError.responseRejected(
-                statusCode: response.statusCode
+            throw CodexRemoteEnrolmentError.enrolmentRequestRejected(
+                CodexRemoteEnrolmentRejection(stage: .stepUpToken, response: response)
             )
         }
         do {
