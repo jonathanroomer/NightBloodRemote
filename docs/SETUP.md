@@ -8,9 +8,10 @@ was empty. The project now supplies the public application identifier from
 It is not an account credential. You authorise your own account in the browser.
 No personal OAuth client ID or OpenAI API key is needed for this route.
 
-This is an interim fix for that configuration error. A fresh public build has
-not yet completed enrolment, pairing and two-way voice using another person's
-OpenAI account and Apple signing identity. The Remote protocol is experimental
+Build 27 has completed enrolment, pairing, audible two-way voice and the correct
+Mac transcript on a second physical iPhone using another OpenAI account and
+the existing Apple developer team. Another Apple signing team and free
+Personal Team signing remain unverified. The Remote protocol is experimental
 and upstream acceptance can vary. Report the stage that fails rather than
 assuming a build or successful sign-in proves the whole connection works.
 
@@ -22,9 +23,10 @@ it made the desktop Remote controls appear. The tester subsequently completed
 phone enrolment, Mac pairing and host confirmation. Task attachment then failed
 after about 20 seconds on an older, company-managed desktop app that could not
 be updated. A read-only check on that Mac confirmed that its older desktop
-uses a different IPC endpoint from the one this helper requires. The test is
-moving to an approved current desktop; task attachment and two-way voice for
-the second account remain pending, as does another Apple developer team.
+uses a different IPC endpoint from the one this helper requires. Moving the
+test to a separate account profile on the current desktop and explicitly
+granting that test task Full access resolved attachment. The tester confirmed
+audible voice and the transcript in the new task.
 
 ## 1. Prepare the Mac
 
@@ -103,6 +105,13 @@ restricted profile and succeeded under the previous full-access policy.
 Restoring the owner's explicitly authorised, task-specific full file/network
 access restored voice on the existing iPhone build. No app reinstall, new
 pairing or API key was needed for that repair. Approval settings were preserved.
+
+The second account's newly created task also began with restricted Workspace
+access and reported `desktop_permission_denied`. With the owner's explicit
+agreement, setting Full access on that task alone enabled voice on build 27.
+Both tasks retained their distinct approval settings. A new task's default
+restrictions and a previously working task's permission drift are separate
+causes; inspect the live task in either case.
 
 Full access is broad access for the selected task, not a mandatory global
 default for every user. Do not enable it silently. If a task is intentionally
@@ -216,10 +225,23 @@ an approval needs attention.
 Test Stop, a second conversation, Settings open/close, reopening and Reconnect.
 Opening Settings should preserve a healthy prepared connection. The 16 September
 fix removes an unnecessary Settings refresh and passed the original phone's
-physical retest. The second-account test remains pending. See
+physical retest. Build 27 also passed voice and transcript on the second account. See
 [setup lessons](SETUP_LESSONS_2026-09-16.md) for release status.
 A mobile-data test can then check the relay outside the local Wi-Fi network.
 No earlier action should be replayed.
+
+### Change to another Mac
+
+Stop voice, then open Connection and tap **Pair another Mac**. Enter a fresh
+code from the new desktop's Remote setup, claim it once, select the new Mac and
+tap **Confirm this exact Mac**. Your account and enrolled iPhone identity stay
+in place. NightBlood clears the old task selection; paste a task link or UUID
+from the new Mac. You can also choose **Choose an already paired Mac**.
+
+Refresh paired Macs only lists existing pairings; it cannot pair a new host.
+Older builds omitted the return to code entry after confirming a Mac. Update
+to build 27 for that recovery action. An uncertain or unverified code claim
+must be reconciled first; the action does not reset or replay it.
 
 ## 4. Optional features and CarPlay
 
@@ -277,6 +299,7 @@ shared Keychain access groups or copy credentials between them.
 | Pairing outcome unknown | Refresh paired-Mac state before deciding on another attempt. |
 | Mac paired, but Voice says Choose a Codex task / Codex Remote unavailable | Fill in the required Codex task link or UUID field with a task from that Mac, then tap Done and wait for preparation. Earlier builds misleadingly called the pairing stage Ready for NightBlood Voice even with this field empty. Actual voice readiness is Ready to talk. |
 | No online Mac | Check same account/workspace, Remote enabled, desktop app running and Mac awake; refresh. |
+| Selected Mac unavailable and you want a different Mac | In build 27, stop voice and use **Pair another Mac**, then explicitly confirm the new host and choose its own task. Keep your existing sign-in and enrolment. Refresh alone cannot add a new pairing. |
 | Desktop attachment failed | Check `/usr/bin/python3`, the selected task and desktop compatibility. Keep the task open on the paired Mac. Use a current desktop version approved for that machine; if company policy blocks an update, test on an approved current installation elsewhere. Newer NightBlood builds report a fixed failure code to distinguish helper execution, desktop handshake, task attachment and timeout. Do not change IPC socket permissions or patch the desktop app. |
 | `desktop_permission_denied`, or an old build's `desktop_unavailable` after previously working | Compare the selected task's live permission profile with its known working settings. Check the helper under that exact policy. Follow the task-specific permission procedure above, preserving approvals and global defaults. |
 | `desktop_endpoint_missing` | Check the paired Mac, intended task, actual Codex home and desktop version. Older desktops may use a different socket location even when pairing works. Follow [desktop compatibility](#desktop-version-compatibility) and update the desktop app through the approved process. A CLI update alone is insufficient. Do not broaden permissions or re-enrol to fix an absent endpoint. |

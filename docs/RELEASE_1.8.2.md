@@ -32,11 +32,14 @@ entitlement. The ordinary iPhone deployment target remains iOS 18. The direct
 Codex Remote connection retains its experimental registration and DeviceCheck
 limitations described in [Connections](CONNECTIONS.md).
 
-The [setup guide](SETUP.md) now covers Mac and phone authorisation, upgrading an
-existing clone, phone-only signing and optional CarPlay setup. This is an
-interim configuration fix; a fresh-account physical connection test remains
-outstanding. It does not add a standalone App Server transport or a new
-sign-out/reset flow.
+The [setup guide](SETUP.md) covers Mac and phone authorisation, upgrading an
+existing clone, phone-only signing and optional CarPlay setup. The build 27
+follow-up adds Pair another Mac recovery without deleting sign-in or enrolment,
+preserves healthy voice when Settings opens, and distinguishes desktop failure
+codes. A second account and physical iPhone passed pairing, audible voice and
+the correct Mac transcript with the existing developer team on desktop
+26.908.70816 (9275). Another signing team and a new physical-car test remain
+unverified. This does not add a standalone App Server transport or account reset.
 
 ## Build and verification
 

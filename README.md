@@ -10,7 +10,8 @@ local TrueDepth gaze input and a Lock Screen Live Activity. I have also included
 the Blender scripts I used to work out the original face design and its
 different listening, thinking, speaking and failure states.
 
-This is a privacy-sanitised public-source snapshot of the iOS 1.8.2 build 23 release. It
+This privacy-sanitised public source follows iOS 1.8.2 build 23 with build 27
+setup and recovery fixes. It
 contains no private Git history, developer-team identifier, provisioning
 profile, device identifier, host name, bearer token, account identifier,
 personal prompt text or sampled voice clip.
@@ -54,9 +55,11 @@ there is no personal client ID or API key to obtain for this route. Existing
 clones need to update, regenerate the Xcode project and rebuild, preserving
 their local signing settings as described in the guide.
 
-This fixes the known missing-configuration error. **Fresh-account enrolment,
-pairing and two-way voice with another Apple signing identity have not yet been
-verified.** The direct Remote protocol and voice attestation are experimental
+The build 27 follow-up adds **Pair another Mac** recovery and preserves a
+healthy voice connection when opening Settings. A second physical iPhone with
+another OpenAI account completed pairing, audible voice and the correct Mac
+transcript using the existing developer team. **Another Apple signing identity
+and free Personal Team signing remain unverified.** The direct Remote protocol and voice attestation are experimental
 and may reject a build or change upstream. Public availability of the client ID
 is not an assurance of OpenAI support for this third-party integration.
 

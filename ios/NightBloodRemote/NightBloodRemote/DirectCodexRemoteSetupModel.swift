@@ -346,10 +346,25 @@ final class DirectCodexRemoteSetupModel {
     private(set) var errorMessage: String?
     private(set) var environments: [CodexRemotePairedEnvironment] = []
     private(set) var selectedEnvironmentID: String?
+    private var pairingState: CodexRemotePairingLifecycleState?
 
     var statusLabel: String { phase.label }
     var guidance: String { phase.guidance }
     var isBusy: Bool { phase.isBusy }
+
+    var canPairAnotherMac: Bool {
+        guard applicationActive, operation == nil, metadata?.state == .enrolled,
+              pairingState == nil || pairingState == .ready || pairingState == .confirmed else {
+            return false
+        }
+        switch phase {
+        case .ready, .selectedEnvironmentUnavailable,
+             .environmentSelectionRequired, .environmentSelected:
+            return true
+        default:
+            return false
+        }
+    }
 
     @ObservationIgnored private let oauth: any DirectCodexPlanOAuthServing
     @ObservationIgnored private let enrolment: any DirectCodexRemoteEnrolling
@@ -552,6 +567,35 @@ final class DirectCodexRemoteSetupModel {
         }
     }
 
+    /// Explicit navigation to a fresh pairing. Keep account and enrolled key;
+    /// never reset an in-flight, unknown or unverified one-time claim.
+    @discardableResult
+    func beginPairingAnotherMac() -> Bool {
+        guard canPairAnotherMac, let metadata else { return false }
+        startOperation(phase: .checking) { model in
+            do {
+                _ = try await model.lifecycleStore.prepare(
+                    accountUserID: metadata.accountUserID, clientID: metadata.clientID
+                )
+                _ = try await model.lifecycleStore.transition(
+                    accountUserID: metadata.accountUserID,
+                    clientID: metadata.clientID,
+                    from: [.confirmed, .ready], to: .ready
+                )
+                await model.sessionManager?.invalidateSession()
+                guard model.acceptsOperationResults else { return }
+                model.pairingState = .ready
+                model.selectedEnvironmentID = nil
+                model.environments = []
+                model.errorMessage = nil
+                model.phase = .manualPairingCodeRequired
+            } catch {
+                await model.reconcilePersistedState(fallbackError: error)
+            }
+        }
+        return true
+    }
+
     func submitPairingCode(_ code: String) {
         guard let account, let metadata, metadata.state == .enrolled else {
             fail(DirectCodexRemoteSetupError.enrolmentRequired)
@@ -635,6 +679,7 @@ final class DirectCodexRemoteSetupModel {
                 guard model.acceptsOperationResults else { return }
                 model.replaceEnvironment(with: confirmed)
                 model.selectedEnvironmentID = selectedEnvironmentID
+                model.pairingState = .confirmed
                 model.phase = .ready
                 model.errorMessage = nil
             } catch is CancellationError {
@@ -850,6 +895,7 @@ final class DirectCodexRemoteSetupModel {
                 clientID: storedMetadata.clientID
             )
             guard acceptsOperationResults else { return }
+            pairingState = pairing?.state
             switch pairing?.state {
             case nil, .ready:
                 selectedEnvironmentID = nil
@@ -902,6 +948,7 @@ final class DirectCodexRemoteSetupModel {
             clientID: metadata.clientID
         )
         guard acceptsOperationResults else { throw CancellationError() }
+        pairingState = pairing?.state
         if pairing?.state == .confirmed,
            let savedID = pairing?.confirmedEnvironmentID,
            !savedID.isEmpty
@@ -936,6 +983,7 @@ final class DirectCodexRemoteSetupModel {
     }
 
     private func clearControllerContext() {
+        pairingState = nil
         account = nil
         metadata = nil
         environmentClient = nil

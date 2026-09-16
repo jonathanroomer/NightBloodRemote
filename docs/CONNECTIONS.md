@@ -18,7 +18,7 @@ pairing codes.
 | TrueDepth gaze | No | Yes | No |
 | Face ID and Secure Enclave behaviour | Not authoritative | Yes | No |
 | Live Activity and background audio lifecycle | Partial | Yes | No |
-| Direct Codex Remote voice | No | Experimental; fresh-account test pending | Own ChatGPT account with Codex/Remote access |
+| Direct Codex Remote voice | No | Experimental; second account/phone passed with existing developer team | Own ChatGPT account with Codex/Remote access |
 | Public Codex App Server transport | Not implemented | Not implemented | Depends on your design |
 
 The repository supplies the public upstream `CODEX_OAUTH_CLIENT_ID`, with both
@@ -68,7 +68,8 @@ It is not a personal account ID, API key or secret. Each user signs into their
 own account and creates a separate device-bound controller. Users do not need
 to extract an identifier from an installed app or obtain a personal client ID.
 The public source is evidence for the value, not evidence that OpenAI supports
-this third-party Remote integration. Independent physical setup remains to be
+this third-party Remote integration. Another account and second physical phone
+passed using the existing developer team; another signing team remains to be
 tested. Do not copy tokens, private keys or pairing records between users.
 
 Optional local settings:

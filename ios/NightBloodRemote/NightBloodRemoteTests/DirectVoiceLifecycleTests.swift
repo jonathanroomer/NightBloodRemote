@@ -4,6 +4,98 @@ import SwiftUI
 
 final class DirectVoiceLifecycleTests: XCTestCase {
     @MainActor
+    func testUnavailableMacCanBeReplacedWithoutSigningInOrEnrollingAgain() async throws {
+        let fixture = PairingRecoveryFixture()
+        let setup = fixture.makeSetup()
+        setup.refreshPersistedState()
+        try await waitForSetup(setup, phase: .selectedEnvironmentUnavailable)
+        XCTAssertTrue(setup.canPairAnotherMac)
+        XCTAssertEqual(setup.selectedEnvironmentID, "old-mac")
+
+        XCTAssertTrue(setup.beginPairingAnotherMac())
+        XCTAssertFalse(setup.beginPairingAnotherMac(), "A rapid second tap cannot restart setup")
+        try await waitForSetup(setup, phase: .manualPairingCodeRequired)
+        XCTAssertNil(setup.selectedEnvironmentID)
+        XCTAssertFalse(setup.isVoiceReady)
+        var record = try await fixture.store.load(accountUserID: "test-user", clientID: "test-client")
+        XCTAssertEqual(record?.state, .ready)
+
+        // The explicit change survives a foreground reconciliation. It does
+        // not silently restore the old Mac while entering a new pairing code.
+        setup.applicationDidEnterBackground()
+        setup.applicationDidBecomeActive()
+        setup.refreshPersistedState()
+        try await waitForSetup(setup, phase: .manualPairingCodeRequired)
+
+        setup.submitPairingCode("ABCD-EFGH")
+        try await waitForSetup(setup, phase: .pairingProvisional)
+        setup.loadEnvironments()
+        try await waitForSetup(setup, phase: .environmentSelectionRequired)
+        XCTAssertNil(setup.selectedEnvironmentID, "Even one online Mac requires selection")
+        XCTAssertFalse(setup.isVoiceReady)
+        setup.selectEnvironment(id: "new-mac")
+        setup.confirmSelectedEnvironment()
+        try await waitForSetup(setup, phase: .ready)
+        XCTAssertEqual(setup.selectedEnvironmentID, "new-mac")
+        record = try await fixture.store.load(accountUserID: "test-user", clientID: "test-client")
+        XCTAssertEqual(record?.confirmedEnvironmentID, "new-mac")
+        let posts = await fixture.transport.pairingPosts
+        let signIns = await fixture.oauth.signIns
+        let enrolments = await fixture.enrolment.enrolments
+        XCTAssertEqual(posts, 1)
+        XCTAssertEqual(signIns, 0)
+        XCTAssertEqual(enrolments, 0)
+    }
+
+    @MainActor
+    func testPairAnotherMacCannotResetUncertainPairing() async throws {
+        for state in [CodexRemotePairingLifecycleState.inFlight, .outcomeUnknown,
+                      .responseReceivedUnverified] {
+            let fixture = PairingRecoveryFixture(state: state)
+            let setup = fixture.makeSetup()
+            setup.refreshPersistedState()
+            try await waitForSetup(setup, phase: state == .responseReceivedUnverified
+                ? .pairingProvisional : .pairingOutcomeUnknown)
+            XCTAssertFalse(setup.canPairAnotherMac)
+            XCTAssertFalse(setup.beginPairingAnotherMac())
+            // Refresh can reveal a paired list but must not erase unknown
+            // state merely because the user then asks to pair another host.
+            setup.loadEnvironments()
+            try await waitForSetup(setup, phase: .environmentSelectionRequired)
+            XCTAssertFalse(setup.canPairAnotherMac)
+            XCTAssertFalse(setup.beginPairingAnotherMac())
+            let record = try await fixture.store.load(accountUserID: "test-user", clientID: "test-client")
+            let posts = await fixture.transport.pairingPosts
+            XCTAssertEqual(record?.state, state)
+            XCTAssertEqual(posts, 0)
+        }
+    }
+
+    @MainActor
+    func testEmptyPairedListCanReturnToCodeEntry() async throws {
+        let fixture = PairingRecoveryFixture(state: .ready)
+        let setup = fixture.makeSetup()
+        setup.refreshPersistedState()
+        try await waitForSetup(setup, phase: .manualPairingCodeRequired)
+        setup.loadEnvironments()
+        try await waitForSetup(setup, phase: .environmentSelectionRequired)
+        XCTAssertTrue(setup.beginPairingAnotherMac())
+        try await waitForSetup(setup, phase: .manualPairingCodeRequired)
+        let posts = await fixture.transport.pairingPosts
+        XCTAssertEqual(posts, 0)
+    }
+
+    @MainActor
+    private func waitForSetup(_ setup: DirectCodexRemoteSetupModel,
+                              phase: DirectCodexRemoteSetupModel.Phase) async throws {
+        for _ in 0..<200 {
+            if setup.phase == phase && !setup.isBusy { return }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertEqual(setup.phase, phase)
+    }
+
+    @MainActor
     func testOpeningSettingsDoesNotRestartSetupReconciliation() async throws {
         let oauth = SettingsOAuthSpy()
         let setup = DirectCodexRemoteSetupModel(
@@ -358,4 +450,94 @@ private actor SettingsOAuthSpy: DirectCodexPlanOAuthServing {
     }
 
     func cancel() async {}
+}
+
+private struct PairingRecoveryFixture {
+    let oauth = RecoveryOAuth()
+    let enrolment = RecoveryEnrolment()
+    let transport = RecoveryTransport()
+    let store: RecoveryPairingStore
+
+    init(state: CodexRemotePairingLifecycleState = .confirmed) {
+        store = RecoveryPairingStore(state: state)
+    }
+
+    @MainActor
+    func makeSetup() -> DirectCodexRemoteSetupModel {
+        DirectCodexRemoteSetupModel(oauth: oauth, enrolment: enrolment,
+            transport: transport, lifecycleStore: store,
+            observeBackground: false, initiallyActive: true)
+    }
+}
+
+private actor RecoveryOAuth: DirectCodexPlanOAuthServing {
+    private(set) var signIns = 0
+    func storedTokens() async throws -> CodexPlanTokens? {
+        let payload = Data(#"{"exp":4000000000,"https://api.openai.com/auth":{"chatgpt_account_id":"test-account","chatgpt_account_user_id":"test-user"}}"#.utf8)
+            .base64EncodedString().replacingOccurrences(of: "=", with: "")
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+        return .init(accessToken: "e30.\(payload).test", refreshToken: "test", idToken: "test")
+    }
+    func signIn(timeout: Duration, presentSafari: CodexOAuthSafariPresentation) async throws -> CodexPlanTokens {
+        signIns += 1
+        throw CancellationError()
+    }
+    func refreshStoredTokens() async throws -> CodexPlanTokens { throw CancellationError() }
+    func cancel() async {}
+}
+
+private actor RecoveryEnrolment: DirectCodexRemoteEnrolling {
+    private(set) var enrolments = 0
+    func storedMetadata() async throws -> CodexRemoteEnrolmentMetadata? {
+        .init(accountUserID: "test-user", clientID: "test-client",
+              identity: .init(algorithm: "ES256", keyID: "test-key",
+                              protectionClass: "test", publicKeySPKIDERBase64: "test"),
+              state: .enrolled)
+    }
+    func enrol(ordinaryAccessToken: String, stepUpTimeout: Duration,
+               presentSafari: CodexOAuthSafariPresentation) async throws -> CodexRemoteEnrolmentMetadata {
+        enrolments += 1
+        throw CancellationError()
+    }
+    func cancel() async {}
+}
+
+private actor RecoveryTransport: CodexRemoteHTTPTransport {
+    private(set) var pairingPosts = 0
+    func send(_ request: CodexRemoteHTTPRequest) async throws -> CodexRemoteHTTPResponse {
+        if request.method == .post {
+            pairingPosts += 1
+            return .init(statusCode: 200, body: Data(#"{"client_id":"test-client","env_id":"new-mac"}"#.utf8))
+        }
+        let json = pairingPosts == 0
+            ? #"{"items":[{"env_id":"old-mac","online":false}]}"#
+            : #"{"items":[{"env_id":"old-mac","online":false},{"env_id":"new-mac","online":true}]}"#
+        return .init(statusCode: 200, body: Data(json.utf8))
+    }
+}
+
+private actor RecoveryPairingStore: CodexRemotePairingLifecycleStoring {
+    private var record: CodexRemotePairingLifecycleRecord
+    init(state: CodexRemotePairingLifecycleState) {
+        record = .init(accountUserID: "test-user", clientID: "test-client",
+                       state: state, confirmedEnvironmentID: state == .confirmed ? "old-mac" : nil)
+    }
+    func prepare(accountUserID: String, clientID: String) async throws -> CodexRemotePairingLifecycleRecord { record }
+    func load(accountUserID: String, clientID: String) async throws -> CodexRemotePairingLifecycleRecord? { record }
+    func transition(accountUserID: String, clientID: String,
+                    from expectedStates: Set<CodexRemotePairingLifecycleState>,
+                    to state: CodexRemotePairingLifecycleState) async throws -> CodexRemotePairingLifecycleRecord {
+        guard expectedStates.contains(record.state) else {
+            throw CodexRemoteControllerError.pairingAttemptAlreadyConsumed
+        }
+        record = .init(accountUserID: accountUserID, clientID: clientID,
+                       state: state, confirmedEnvironmentID: nil)
+        return record
+    }
+    func confirmAfterEnvironmentVerification(_ binding: CodexRemoteVerifiedEnvironmentBinding) async throws -> CodexRemotePairingLifecycleRecord {
+        record = .init(accountUserID: binding.accountUserID, clientID: binding.clientID,
+                       state: .confirmed, confirmedEnvironmentID: binding.environmentID)
+        return record
+    }
 }

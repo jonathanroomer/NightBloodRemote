@@ -70,6 +70,9 @@ only the owner's authorised choice. Do not keep changing unrelated settings.
    selection before and after the request. Never substitute the setup agent's
    UUID or a public conversation-share link. Tap Done and wait for desktop
    attachment and Ready to talk.
+   When changing hosts, stop Voice and use **Pair another Mac** (build 27),
+   then confirm the new host and choose its task. Keep sign-in/enrolment intact.
+   Refresh only lists existing pairings. Never reset an uncertain code claim.
 8. **Verify the result.** Test audible two-way voice and the intended Mac task
    with the owner, then Stop, a second conversation, Settings open/close,
    foreground return and explicit Reconnect. Test a harmless workspace read

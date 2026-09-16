@@ -50,6 +50,14 @@ struct DirectSettingsView: View {
                             setup.submitPairingCode(pairingCode)
                         }
                         .disabled(setup.isBusy || pairingCode.count < 8)
+                        Button("Choose an already paired Mac") {
+                            pairingCode = ""
+                            setup.loadEnvironments()
+                        }
+                        .disabled(setup.isBusy)
+                        Text("Use a fresh code from the new Mac. Your sign-in and iPhone enrolment are kept. Select a task from that Mac after pairing.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
 
@@ -66,6 +74,9 @@ struct DirectSettingsView: View {
                                 Button {
                                     guard let id = environment.environmentID else {
                                         return
+                                    }
+                                    if id != setup.selectedEnvironmentID {
+                                        voice.taskReference = ""
                                     }
                                     setup.selectEnvironment(id: id)
                                 } label: {
@@ -91,7 +102,8 @@ struct DirectSettingsView: View {
                                         }
                                     }
                                 }
-                                .disabled(environment.online != true)
+                                .disabled(environment.online != true || setup.isBusy
+                                    || !voice.canSelectFace)
                             }
                         }
 
@@ -99,6 +111,17 @@ struct DirectSettingsView: View {
                             setup.loadEnvironments()
                         }
                         .disabled(setup.isBusy)
+
+                        if setup.canPairAnotherMac {
+                            Button("Pair another Mac") {
+                                guard voice.canSelectFace,
+                                      setup.beginPairingAnotherMac() else { return }
+                                pairingCode = ""
+                                voice.taskReference = ""
+                            }
+                            .accessibilityIdentifier("pair-another-mac")
+                            .disabled(!voice.canSelectFace)
+                        }
 
                         if setup.phase == .environmentSelected {
                             Button("Confirm this exact Mac") {

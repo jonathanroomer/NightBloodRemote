@@ -49,47 +49,44 @@ ability to choose a restricted task and normal approval handling.
 
 ## Current verification and release boundary
 
-- The earlier public OAuth/configuration fix was pushed. These additional
-  onboarding lessons and the pending recovery work are not a new public release.
-- A second phone with another Codex account completed sign-in, enrolment,
-  pairing and Mac confirmation after the workspace admin change. It used the
-  existing Apple developer team. Task attachment/two-way voice remain pending.
-- The original phone first recovered voice on build 24 after the task permission
-  repair. It then received build 26 and passed two Settings open/close cycles,
-  Settings during voice, two conversations, the intended Mac transcript, and
-  voice after closing/reopening. Its live task policy remained unchanged.
-- Private build 26 passes strict signing checks, 37 voice/CarPlay simulator
-  tests and 11 helper tests. Its Settings fix and newer bounded diagnostics have
-  been transferred to the public experiment, which passes its 36 focused Swift
-  tests and 11 helper tests. The existing second-phone identity has a signed
-  test update installed. Its current reported blocker remains
-  `desktop_endpoint_missing` on the other Mac. The host report confirmed an
-  older IPC layout on desktop 26.623.141536 (4753), with a CLI override selecting
-  App Server 0.145.0 instead of bundled 0.142.5. The working original desktop
-  is 26.908.70816 (9275), bundled App Server 0.154.0-alpha.6.2. Those are observed
-  combinations, not a published minimum-version contract. The older-Mac test
-  is closed; the next test uses a separate profile on a current desktop.
-  Do not label these changes as a shipped public release or a successful
-  second-account voice test yet.
-- Another Apple signing team, free Personal Team signing, the new phone-only
-  entitlement path and complete fresh-account voice remain unverified. A
-  simulator or an unchanged Mac companion cannot prove the phone's Secure
-  Enclave, DeviceCheck, Face ID, relay identity or physical audio path.
+- The original phone remains on build 26. Settings open/close, Settings during
+  voice, two conversations, correct transcript and voice after reopening passed.
+  Its approved full-access/on-request/auto-review task settings are unchanged.
+- The second phone uses build 27, another OpenAI account and the existing Apple
+  developer team. It completed enrolment and pairing after workspace Remote was
+  enabled. The older host was abandoned after its IPC endpoint mismatch was
+  confirmed; no legacy compatibility was added.
+- The second phone then paired a current desktop profile. Build 27 adds the
+  missing Pair another Mac recovery action without deleting sign-in or enrolment.
+  Unknown pairing outcomes remain protected against reset/replay. The new task
+  began with Workspace access and denied the helper. Its owner explicitly chose
+  task-specific Full access, preserving its existing granular approvals and
+  reviewer. Audible voice and the transcript in that task now pass. Final
+  reopen/Settings/second-conversation confirmation is pending.
+- The separate desktop profile initially had a Codex-home path too long for
+  its Unix socket. A shorter profile path resolved its EINVAL listen error.
+  This is a custom-profile troubleshooting check, not a normal setup step.
+  Preserve credentials and app data within that profile; never copy another
+  user's authentication or change the working profile to fix a test instance.
+- Build 27 passes 39 focused Swift lifecycle/CarPlay tests, the source privacy
+  audit, signed device build and installed-version verification. The helper is
+  unchanged from the 11 passing helper tests. These changes are saved in the
+  public-source experiment and have not yet been pushed as a public update.
+- Another Apple signing team, free Personal Team signing and a new physical-car
+  test remain unverified. The second phone did validate the local phone-only
+  entitlement setting with the existing developer team. Simulator checks alone
+  cannot prove Secure Enclave, DeviceCheck, Face ID, relay identity or audio.
 
 ## Resume in this order
 
-1. Preserve the accepted original-phone build and task permissions. Its Settings,
-   voice, repeated conversation, correct transcript and reopen checks are done.
-2. Move the second-phone test to a current desktop with a separate account
-   profile, then pair that host and choose its own task. Keep the existing
-   phone installation and enrolled identity. Do not carry the older host's
-   task UUID into the new profile. Preserve the original account and task.
-3. Move only reviewed, sanitised fixes into the public source. Run its audit
-   and relevant checks. Preserve blank team, generic bundle IDs, empty task
-   field, generic prompts and disabled optional mutation switches.
-4. Update the setup status to the exact combinations actually verified. Keep
-   remaining signing/account limitations visible. CarPlay has a separate parked
-   physical acceptance check. Give the requester a tested process afterwards.
+1. Preserve both accounts, selected tasks and their approved permission settings.
+   Do not use either voice task for diagnostic model turns or send it the other
+   task's UUID. Read live policies before and after a settings operation.
+2. Finish the second phone's reopen/Settings/second-conversation check.
+3. Review and publish only sanitised source fixes, preserving blank team,
+   generic bundle IDs, empty task defaults and disabled optional mutation tools.
+4. Keep the exact tested combinations and outstanding signing/car tests visible.
+   A current desktop is required; do not resume work on legacy endpoint support.
 
 Additional improvements to consider after the physical check: a persistent
 ignored signing configuration, distinct phone-only/CarPlay schemes, an actual

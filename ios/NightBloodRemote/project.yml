@@ -104,7 +104,7 @@ targets:
         # on the paired host. It is deliberately off unless a fork owner opts
         # in through an uncommitted local build setting.
         NIGHTBLOOD_ENABLE_VOICE_AUTOMATIONS: NO
-        CURRENT_PROJECT_VERSION: 23
+        CURRENT_PROJECT_VERSION: 27
         MARKETING_VERSION: 1.8.2
         GENERATE_INFOPLIST_FILE: NO
         CODE_SIGN_ENTITLEMENTS: NightBloodRemote/NightBloodRemoteCarPlay.entitlements
@@ -129,7 +129,7 @@ targets:
         PRODUCT_NAME: NightBloodLiveActivity
         INFOPLIST_FILE: NightBloodLiveActivity/Info.plist
         DEVELOPMENT_TEAM: ""
-        CURRENT_PROJECT_VERSION: 23
+        CURRENT_PROJECT_VERSION: 27
         MARKETING_VERSION: 1.8.2
         GENERATE_INFOPLIST_FILE: NO
         APPLICATION_EXTENSION_API_ONLY: YES
