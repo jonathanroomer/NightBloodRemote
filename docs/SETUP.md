@@ -17,22 +17,34 @@ assuming a build or successful sign-in proves the whole connection works.
 A physical test on 16 September reached browser sign-in with another Codex
 account on a second iPhone, signed by the existing developer team. Its initial
 enrolment request returned HTTP 403 before the additional authorisation screen.
-The cause is not established. This confirms installation and sign-in only,
-not enrolment, pairing, voice or support for another Apple developer team.
+The test workspace's administrator then found Remote Control disabled; enabling
+it made the desktop Remote controls appear. The tester subsequently completed
+phone enrolment, Mac pairing and host confirmation. Task attachment then failed
+after about 20 seconds on an older, company-managed desktop app that could not
+be updated. Desktop compatibility is a suspect, not a confirmed cause. Task
+attachment and two-way voice on a current desktop build are still pending,
+as is support for another Apple developer team.
 
 ## 1. Prepare the Mac
 
 - Install/update the ChatGPT/Codex desktop app, sign in and confirm a local
   Codex task works. Use the same account and workspace later on the phone.
+- **Check workspace Remote Control permission before starting phone setup.**
+  If you use a managed workspace, ask its administrator to check that Remote
+  Control is enabled for your user or role in the workspace's admin settings.
+  Ordinary Codex access does not establish this permission. If Connections
+  shows only SSH, check this permission and the desktop app version; SSH setup
+  does not enable phone Remote Control. After an admin change, reopen
+  Connections (restart the app if needed) and confirm the host controls appear.
 - Open **Settings → Connections → Control this Mac → Set up** or **Add**.
-  Complete the displayed verification and allow Remote access. A managed
-  workspace may require its administrator to enable it.
+  Complete the displayed verification and allow Remote access on this Mac.
+  Workspace permission and this host's Remote setting are separate checks.
 - Keep the desktop app running and the Mac online and awake. Use its
   **Keep this Mac awake** setting when appropriate.
-- Choose a local Codex task in the project you want voice to use. Keep its
-  normal sandbox and approvals. Obtain its local task link or UUID, not a
-  published conversation-share link. If needed, ask the desktop agent to
-  identify the intended task's local link. Do not post that value in an issue.
+- Choose a local Codex task in the project you want voice to use. Record and
+  preserve its effective permissions and approvals, then check the helper can
+  run under that policy as described below. Obtain its local task link or UUID,
+  not a published conversation-share link. Do not post that value in an issue.
 
 OpenAI documents the host controls in [Remote connections](https://learn.chatgpt.com/docs/remote-connections).
 Desktop labels can vary by version. The installed 26.908.70816 desktop source
@@ -44,6 +56,41 @@ For this direct route, do not launch a separate `codex app-server --listen`
 process, open a router/LAN port, or install a NightBlood Mac companion. The
 bundled transcript helper starts automatically through the paired App Server.
 It needs `/usr/bin/python3` and a compatible running desktop app.
+
+### Selected task permissions
+
+Workspace Remote Control permission lets the phone reach the Mac. The selected
+task's file/network permission profile separately governs the transcript helper
+that must attach before Voice becomes ready. Pairing does not grant that helper
+access to the desktop's local Unix socket.
+
+Record the selected task's current permission profile, filesystem/network
+restrictions and approval settings before setup. Use the desktop's task
+permission controls to review them. Keep the same settings when sending a
+message, resuming the task or switching between setup and voice work. A setup
+agent must not replace them with its own defaults. Reading global configuration
+alone does not prove the effective settings of an already running task.
+
+On 16 September, the original working voice task had changed from full access
+to a restricted workspace profile. The bundled helper failed under that exact
+restricted profile and succeeded under the previous full-access policy.
+Restoring the owner's explicitly authorised, task-specific full file/network
+access restored voice on the existing iPhone build. No app reinstall, new
+pairing or API key was needed for that repair. Approval settings were preserved.
+
+Full access is broad access for the selected task, not a mandatory global
+default for every user. Do not enable it silently. If a task is intentionally
+restricted, diagnose the helper under that exact policy and agree an appropriate
+task-specific choice with its owner. A narrower socket/proxy configuration
+passed a local probe but has not passed the complete phone flow and is not a
+supported copy-and-paste setup recipe yet.
+
+File read permission, ordinary network access or a successful unrestricted
+Terminal test does not establish Unix-socket access inside the task sandbox.
+Newly added named profiles may also be absent from the running desktop's cached
+configuration. After an approved change, verify the task's live effective
+settings and the app's desktop-attachment result. Do not chmod the socket,
+change global defaults, edit Codex databases or auto-elevate the helper.
 
 ## 2. Build for your iPhone
 
@@ -120,6 +167,13 @@ do not assume a free signing success proves a working connection.
    not repeatedly submitting the same operation.
 6. In **Codex task**, paste your chosen local task link or canonical task UUID.
    It must belong to that host/account. The app stores only the canonical UUID.
+   This field is required even after the Mac is paired. To obtain the UUID,
+   prefer an existing local task link. If a UUID is needed, check the intended
+   task's permission selection, then ask its Codex agent:
+   **Read CODEX_THREAD_ID from your environment and show me this task's UUID.**
+   Verify its permissions remain unchanged afterwards. Copy the result directly
+   into NightBlood, not into another working voice task. Do not use a public
+   share link or the setup agent's UUID from a different Mac.
 7. Tap **Done** and wait for desktop preparation. NightBlood must attach the
    selected task before allowing Voice. Use **Reconnect** if setup is ready
    but the connection needs refreshing.
@@ -133,8 +187,12 @@ Approve any host request through its normal interface. NightBlood does not
 provide a general approval-answering tool; keep the desktop task available if
 an approval needs attention.
 
-Test Stop, reopening and Reconnect. A mobile-data test can then check the relay
-outside the local Wi-Fi network. No earlier action should be replayed.
+Test Stop, a second conversation, Settings open/close, reopening and Reconnect.
+Opening Settings should preserve a healthy prepared connection. The 16 September
+candidate removes an unnecessary Settings refresh, but its physical retest is
+still pending. See [setup lessons](SETUP_LESSONS_2026-09-16.md) for release status.
+A mobile-data test can then check the relay outside the local Wi-Fi network.
+No earlier action should be replayed.
 
 ## 4. Optional features and CarPlay
 
@@ -185,11 +243,17 @@ shared Keychain access groups or copy credentials between them.
 | Developer disk image could not be mounted | Read the underlying Xcode error. If it says the device is locked, unlock to the Home Screen and keep it awake while Xcode prepares it. Report other underlying errors instead of repeatedly rebuilding. |
 | No Accounts / profile does not include this device | Sign into the intended developer account in Xcode Settings → Apple Accounts, select its team and let automatic signing register the phone. An existing certificate can sign a build without being able to register a new phone. Alternatively, register the phone and create/download a matching development profile through Apple's developer website. |
 | Browser login fails | Check the account/workspace and redacted OAuth error. The iPhone's callback ports are loopback-only. |
+| Connections shows only SSH / Control this Mac is missing | Check the desktop app is current and ask the workspace administrator to enable Remote Control for your user or role. Reopen Connections after the change, then complete this Mac's Remote setup. Availability may also vary by rollout. |
 | HTTP 403 immediately on Enrol this iPhone | This is enrolment start, before device-key creation or Mac pairing. Check official Remote availability and enablement for the same account/workspace; ordinary Codex access alone is not proof. Record the displayed stage, response format and any recognised service code. An HTML refusal may come from a network or edge service. The status alone does not establish the cause; do not change app identity or bypass verification to force access. |
 | Enrolment fails or lacks fresh password authentication | Report that stage and login method. The current validator requires a fresh `pwd_auth_time` claim; SSO/passkey compatibility is not established. Do not remove the check. |
 | Pairing outcome unknown | Refresh paired-Mac state before deciding on another attempt. |
+| Mac paired, but Voice says Choose a Codex task / Codex Remote unavailable | Fill in the required Codex task link or UUID field with a task from that Mac, then tap Done and wait for preparation. Earlier builds misleadingly called the pairing stage Ready for NightBlood Voice even with this field empty. Actual voice readiness is Ready to talk. |
 | No online Mac | Check same account/workspace, Remote enabled, desktop app running and Mac awake; refresh. |
-| Desktop attachment failed | Check `/usr/bin/python3`, the selected task and desktop compatibility. Do not change IPC socket permissions or patch the desktop app. |
+| Desktop attachment failed | Check `/usr/bin/python3`, the selected task and desktop compatibility. Keep the task open on the paired Mac. Use a current desktop version approved for that machine; if company policy blocks an update, test on an approved current installation elsewhere. Newer NightBlood builds report a fixed failure code to distinguish helper execution, desktop handshake, task attachment and timeout. Do not change IPC socket permissions or patch the desktop app. |
+| `desktop_permission_denied`, or an old build's `desktop_unavailable` after previously working | Compare the selected task's live permission profile with its known working settings. Check the helper under that exact policy. Follow the task-specific permission procedure above, preserving approvals and global defaults. |
+| `desktop_endpoint_missing` | Check the paired Mac, intended task, running desktop app and its actual Codex home. This is not proof of a permission denial or of an unsupported account. |
+| `desktop_connection_refused`, reset, handshake failure or timeout | Check whether the desktop/socket is still alive and compatible. Record the bounded code and desktop version. Do not assume Python is missing or change signing because attachment timed out. Some detailed codes exist only in the pending diagnostic candidate. |
+| Voice works from Home but opening Settings produces a secure-connection error | The existing Settings view can unnecessarily restart setup and replace a healthy connection. A fix is prepared, with physical verification pending. For the observed case, reopening the app and starting voice from Home works. This symptom does not by itself call for re-enrolment or more permission changes. |
 | Voice attestation failed | Check physical device/signing and record the redacted failure. Never invent a DeviceCheck proof. |
 | CarPlay signing error | Use the phone-only setting until your App ID/profile has Apple's approval. |
 

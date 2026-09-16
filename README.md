@@ -32,6 +32,12 @@ Start with the [step-by-step setup guide](docs/SETUP.md). It covers Apple
 signing, Mac Remote settings, ChatGPT sign-in, iPhone enrolment, pairing and
 selecting the Codex task. Agents should also read [AGENTS.md](AGENTS.md).
 
+Check workspace Remote Control permission, this Mac's Remote setup and the
+selected task's permissions separately. Trusting the phone also does not enable
+Developer Mode: turn it on, restart and confirm it before installing. The guide
+and [setup lessons](docs/SETUP_LESSONS_2026-09-16.md) record the required order,
+known fixes and remaining physical tests.
+
 **16 September interim fix:** earlier public builds stopped at sign-in because
 `CODEX_OAUTH_CLIENT_ID` was blank. The build now includes the public application
 identifier published in [OpenAI's Codex source](https://github.com/openai/codex/blob/main/codex-rs/login/src/auth/manager.rs).
@@ -136,6 +142,10 @@ result as a small set of runtime parameters. The full route is in
   microphone and speaker testing.
 - Developer Mode enabled on that iPhone for installation through Xcode. Enable
   it, restart and confirm Turn On as described in [Setup](docs/SETUP.md).
+- For the experimental direct connection: Codex access and Remote Control
+  enabled for the same account/workspace on the Mac and phone. Managed
+  workspaces may require an administrator to enable Remote Control separately.
+  Complete the Mac's Remote setup before phone enrolment; see [Setup](docs/SETUP.md#1-prepare-the-mac).
 - Blender 5.2 or later, but only if you want to regenerate the design studies.
 
 ## Build the safe Simulator demo
