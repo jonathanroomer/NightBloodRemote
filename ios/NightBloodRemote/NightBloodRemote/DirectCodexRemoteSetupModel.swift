@@ -277,7 +277,7 @@ final class DirectCodexRemoteSetupModel {
             case .environmentSelected: "Confirm the selected Mac"
             case .confirmingEnvironment: "Confirming the selected Mac"
             case .selectedEnvironmentUnavailable: "Selected Mac unavailable"
-            case .ready: "Ready for NightBlood Voice"
+            case .ready: "Mac paired and confirmed"
             case .cancelling: "Stopping setup safely"
             case .failed: "Setup needs attention"
             }
@@ -322,7 +322,7 @@ final class DirectCodexRemoteSetupModel {
             case .selectedEnvironmentUnavailable:
                 "The saved Mac is offline or no longer paired. Choose only from a fresh native list."
             case .ready:
-                "Every Voice connection will revalidate this same Mac before opening WSS."
+                "Voice uses the Codex task selected below. Choose a task on this Mac, then wait for Ready to talk."
             case .cancelling:
                 "Backgrounding or cancellation stops the active setup operation."
             case .failed:

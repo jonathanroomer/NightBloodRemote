@@ -856,7 +856,7 @@ actor CodexRemoteVoiceTransport {
         guard let resource = Bundle.main.url(forResource: "desktop_transcript", withExtension: "py"),
               let script = try? String(contentsOf: resource, encoding: .utf8),
               script.utf8.count <= 32 * 1024
-        else { throw CodexRemoteVoiceError.desktopTranscriptUnavailable }
+        else { throw CodexRemoteVoiceError.desktopTranscriptSetupFailed(.helperMissing) }
         let processID = makeUUID().uuidString.lowercased()
         let nonce = makeUUID().uuidString.lowercased()
         let signal = CodexRemoteVoiceOneShot<Void>()
@@ -881,11 +881,15 @@ actor CodexRemoteVoiceTransport {
         let commandParams = CodexRemoteVoiceJSON.object(params)
         desktopCommandTask = Task { [weak self] in
             guard let self else { return }
-            _ = try? await self.request(.desktopCommand, params: commandParams, timeout: 24 * 60 * 60 + 5)
-            await self.desktopAttachmentEnded(processID: processID)
+            do {
+                _ = try await self.request(.desktopCommand, params: commandParams, timeout: 24 * 60 * 60 + 5)
+                await self.desktopAttachmentEnded(processID: processID)
+            } catch {
+                await self.desktopAttachmentEnded(processID: processID, reason: .commandFailed)
+            }
         }
         do {
-            try await codexRemoteVoiceWithTimeout(seconds: 25, timeoutError: .desktopTranscriptUnavailable) {
+            try await codexRemoteVoiceWithTimeout(seconds: 25, timeoutError: .desktopTranscriptSetupFailed(.readinessTimedOut)) {
                 try await signal.wait()
             }
             try ensureForegroundOperation(generation)
@@ -894,6 +898,10 @@ actor CodexRemoteVoiceTransport {
             }
         } catch {
             await closeTransport(preserveState: false)
+            if let diagnostic = error as? CodexRemoteVoiceError,
+               case .desktopTranscriptSetupFailed = diagnostic {
+                throw diagnostic
+            }
             throw CodexRemoteVoiceError.desktopTranscriptUnavailable
         }
     }
@@ -908,12 +916,16 @@ actor CodexRemoteVoiceTransport {
         try await prepareAttestations(operationGeneration: lifecycleGeneration)
     }
 
-    private func desktopAttachmentEnded(processID: String) async {
-        guard desktopProcessID == processID, !closing, !transportClosed else { return }
+    private func desktopAttachmentEnded(
+        processID: String,
+        reason: CodexRemoteDesktopTranscriptFailure = .helperEnded
+    ) async {
+        guard desktopProcessID == processID, state != .failed, !closing, !transportClosed else { return }
+        let failure = CodexRemoteVoiceError.desktopTranscriptSetupFailed(reason)
         desktopReady = false
-        await desktopReadiness?.resolve(.failure(.desktopTranscriptUnavailable))
         state = .failed
-        errorDescription = CodexRemoteVoiceError.desktopTranscriptUnavailable.localizedDescription
+        errorDescription = failure.localizedDescription
+        await desktopReadiness?.resolve(.failure(failure))
         publish()
         // The model's terminal-event owner stops active realtime once. Before
         // a gesture there is no media or realtime mutation to stop.
@@ -930,7 +942,7 @@ actor CodexRemoteVoiceTransport {
               let data = Data(base64Encoded: encoded),
               desktopOutput.count + data.count <= 4_096
         else {
-            await desktopAttachmentEnded(processID: processID)
+            await desktopAttachmentEnded(processID: processID, reason: .outputRejected)
             return
         }
         desktopOutput.append(data)
@@ -942,14 +954,24 @@ actor CodexRemoteVoiceTransport {
                   receipt["threadId"]?.stringValue == desktopTaskID,
                   receipt["nonce"]?.stringValue == desktopNonce
             else {
-                await desktopAttachmentEnded(processID: processID)
+                await desktopAttachmentEnded(processID: processID, reason: .outputRejected)
                 return
             }
             if receipt["event"]?.stringValue == "ready" {
                 desktopReady = true
                 await desktopReadiness?.resolve(.success(()))
-            } else {
+            } else if receipt["event"]?.stringValue == "failed" {
+                await desktopAttachmentEnded(
+                    processID: processID,
+                    reason: .helperReason(receipt["reason"]?.stringValue)
+                )
+                return
+            } else if receipt["event"]?.stringValue == "closed" {
                 await desktopAttachmentEnded(processID: processID)
+                return
+            } else {
+                await desktopAttachmentEnded(processID: processID, reason: .outputRejected)
+                return
             }
         }
     }

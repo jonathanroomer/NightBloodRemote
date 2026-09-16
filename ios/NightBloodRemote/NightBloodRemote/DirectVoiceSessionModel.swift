@@ -388,6 +388,12 @@ final class DirectVoiceSessionModel {
 
 
     var statusLabel: String {
+        if state == .unavailable, setup?.isVoiceReady == true,
+           Self.canonicalTaskID(from: taskReference) == nil {
+            return taskReference.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? "Choose a Codex task"
+                : "Enter a valid Codex task link or UUID"
+        }
         if desktopPreparationID != nil, !desktopPrepared, voice == nil {
             return "Connecting transcript to Codex"
         }

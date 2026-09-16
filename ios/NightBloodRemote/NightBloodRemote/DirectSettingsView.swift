@@ -178,7 +178,7 @@ struct DirectSettingsView: View {
                 } header: {
                     Text("Codex task")
                 } footer: {
-                    Text("A pasted link is reduced to its task UUID before storage. The task identity remains native; the face WebView receives only a WebRTC answer and never sees this ID, your Mac ID or any credential.")
+                    Text("Required for Voice. Open the task you want to use in Codex on the paired Mac. Ask its agent to read CODEX_THREAD_ID from its environment and show you the task UUID, then paste it here. You can also paste a local Codex task link. Wait for Ready to talk before starting Voice.")
                 }
 
                 Section {
@@ -221,7 +221,10 @@ struct DirectSettingsView: View {
         )
         .task {
             carPlayTrace = NightBloodCarPlayDiagnostics.renderedTrace()
-            setup.refreshPersistedState()
+            // Launch/foreground recovery owns setup reconciliation. Repeating
+            // it just to inspect Settings temporarily revokes voice readiness
+            // and tears down the healthy, prepared Remote connection.
+            // Explicit refresh/recovery buttons below remain available.
         }
         .onChange(of: setup.phase) {
             voice.refreshAvailability()

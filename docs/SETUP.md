@@ -189,8 +189,9 @@ an approval needs attention.
 
 Test Stop, a second conversation, Settings open/close, reopening and Reconnect.
 Opening Settings should preserve a healthy prepared connection. The 16 September
-candidate removes an unnecessary Settings refresh, but its physical retest is
-still pending. See [setup lessons](SETUP_LESSONS_2026-09-16.md) for release status.
+fix removes an unnecessary Settings refresh and passed the original phone's
+physical retest. The second-account test remains pending. See
+[setup lessons](SETUP_LESSONS_2026-09-16.md) for release status.
 A mobile-data test can then check the relay outside the local Wi-Fi network.
 No earlier action should be replayed.
 
@@ -240,6 +241,7 @@ shared Keychain access groups or copy credentials between them.
 |---|---|
 | Missing OAuth client ID | Follow the upgrade steps and inspect effective app-target settings. An API key is not the solution. |
 | Developer Mode disabled | Enable it on the phone, restart, confirm Turn On, and unlock before installation. Trusting the Mac alone is not enough. |
+| “Face ID is required before NightBlood can control this Mac” | This is the phone's local unlock gate, before Remote. Check that the owner's Face ID works and NightBlood is allowed under Settings → Face ID & Passcode → Other Apps. A passcode-unlocked phone is not an authenticated NightBlood session. The current generic message can also cover biometric lockout; do not change Mac permissions or re-pair to fix it. See [Apple's Face ID app controls](https://support.apple.com/en-gb/108411). |
 | Developer disk image could not be mounted | Read the underlying Xcode error. If it says the device is locked, unlock to the Home Screen and keep it awake while Xcode prepares it. Report other underlying errors instead of repeatedly rebuilding. |
 | No Accounts / profile does not include this device | Sign into the intended developer account in Xcode Settings → Apple Accounts, select its team and let automatic signing register the phone. An existing certificate can sign a build without being able to register a new phone. Alternatively, register the phone and create/download a matching development profile through Apple's developer website. |
 | Browser login fails | Check the account/workspace and redacted OAuth error. The iPhone's callback ports are loopback-only. |
@@ -253,7 +255,7 @@ shared Keychain access groups or copy credentials between them.
 | `desktop_permission_denied`, or an old build's `desktop_unavailable` after previously working | Compare the selected task's live permission profile with its known working settings. Check the helper under that exact policy. Follow the task-specific permission procedure above, preserving approvals and global defaults. |
 | `desktop_endpoint_missing` | Check the paired Mac, intended task, running desktop app and its actual Codex home. This is not proof of a permission denial or of an unsupported account. |
 | `desktop_connection_refused`, reset, handshake failure or timeout | Check whether the desktop/socket is still alive and compatible. Record the bounded code and desktop version. Do not assume Python is missing or change signing because attachment timed out. Some detailed codes exist only in the pending diagnostic candidate. |
-| Voice works from Home but opening Settings produces a secure-connection error | The existing Settings view can unnecessarily restart setup and replace a healthy connection. A fix is prepared, with physical verification pending. For the observed case, reopening the app and starting voice from Home works. This symptom does not by itself call for re-enrolment or more permission changes. |
+| Voice works from Home but opening Settings produces a secure-connection error | Older builds unnecessarily restart setup when Settings appears. The fix passed the original phone's physical checks in build 26 and is in the public experiment; check release status before updating. In the earlier observed case, reopening the app and starting voice from Home works. This symptom does not by itself call for re-enrolment or more permission changes. |
 | Voice attestation failed | Check physical device/signing and record the redacted failure. Never invent a DeviceCheck proof. |
 | CarPlay signing error | Use the phone-only setting until your App ID/profile has Apple's approval. |
 

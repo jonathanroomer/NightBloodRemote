@@ -1,7 +1,70 @@
 import XCTest
+import SwiftUI
 @testable import NightBlood
 
 final class DirectVoiceLifecycleTests: XCTestCase {
+    @MainActor
+    func testOpeningSettingsDoesNotRestartSetupReconciliation() async throws {
+        let oauth = SettingsOAuthSpy()
+        let setup = DirectCodexRemoteSetupModel(
+            oauth: oauth,
+            observeBackground: false,
+            initiallyActive: true
+        )
+        let voice = DirectVoiceSessionModel(
+            liveActivityPublisher: RecordingLiveActivityPublisher()
+        )
+        // Launch owns reconciliation. Merely showing Settings must not read
+        // credentials again or push setup through checking/loading phases.
+        setup.refreshPersistedState()
+        for _ in 0..<100 {
+            if setup.phase == .signedOut { break }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertEqual(setup.phase, .signedOut)
+        let initialReads = await oauth.storedTokenReads
+        XCTAssertEqual(initialReads, 1)
+
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        defer { window.isHidden = true; window.rootViewController = nil }
+        for presentation in 0..<2 {
+            let appeared = expectation(description: "Settings appeared \(presentation)")
+            window.rootViewController = UIHostingController(
+                rootView: DirectSettingsView(setup: setup, voice: voice)
+                    .onAppear { appeared.fulfill() }
+            )
+            window.isHidden = false
+            await fulfillment(of: [appeared], timeout: 3)
+            // Allow the actual sheet's SwiftUI .task to run after appearance.
+            try await Task.sleep(for: .milliseconds(100))
+            let reads = await oauth.storedTokenReads
+            XCTAssertEqual(reads, 1, "Opening Settings must not restart setup")
+            XCTAssertEqual(setup.phase, .signedOut)
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+
+        // An explicit recovery refresh remains available.
+        setup.refreshPersistedState()
+        for _ in 0..<100 {
+            if setup.phase == .signedOut { break }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        let refreshedReads = await oauth.storedTokenReads
+        XCTAssertEqual(refreshedReads, 2)
+    }
+
+    func testTranscriptDiagnosticsNeverEchoUnknownHelperReasons() {
+        let reason = CodexRemoteDesktopTranscriptFailure.helperReason("private-path-and-account")
+        XCTAssertEqual(reason, .desktopUnavailable)
+        let message = CodexRemoteVoiceError.desktopTranscriptSetupFailed(reason).localizedDescription
+        XCTAssertFalse(message.contains("private-path-and-account"))
+        XCTAssertEqual(CodexRemoteDesktopTranscriptFailure.helperReason("desktop_handshake_failed"), .handshakeFailed)
+        XCTAssertEqual(CodexRemoteDesktopTranscriptFailure.helperReason("helper_command_failed"), .desktopUnavailable)
+    }
+
     @MainActor
     func testVoiceIsUnavailableBeforeDesktopAcknowledgement() {
         let model = DirectVoiceSessionModel(
@@ -273,4 +336,26 @@ private final class AvailabilityRecordingFace: DirectFaceJavaScriptControlling {
     func stop() {}
     func closeLocalOnly() {}
     func gaze(_ sample: GazeSample) {}
+}
+
+private actor SettingsOAuthSpy: DirectCodexPlanOAuthServing {
+    private(set) var storedTokenReads = 0
+
+    func storedTokens() async throws -> CodexPlanTokens? {
+        storedTokenReads += 1
+        return nil
+    }
+
+    func signIn(
+        timeout: Duration,
+        presentSafari: CodexOAuthSafariPresentation
+    ) async throws -> CodexPlanTokens {
+        throw CancellationError()
+    }
+
+    func refreshStoredTokens() async throws -> CodexPlanTokens {
+        throw CancellationError()
+    }
+
+    func cancel() async {}
 }

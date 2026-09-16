@@ -51,6 +51,80 @@ struct CodexRemoteVoicePrompt: Equatable, Sendable {
     }
 }
 
+/// Fixed diagnostics only: never display helper stderr, paths or IPC contents.
+enum CodexRemoteDesktopTranscriptFailure: String, Sendable, Equatable {
+    case helperMissing = "helper_missing"
+    case commandFailed = "helper_command_failed"
+    case helperEnded = "helper_ended"
+    case readinessTimedOut = "readiness_timed_out"
+    case outputRejected = "helper_output_rejected"
+    case desktopDisconnected = "desktop_disconnected"
+    case controllerDisconnected = "controller_disconnected"
+    case attachmentFailed = "desktop_attachment_failed"
+    case handshakeFailed = "desktop_handshake_failed"
+    case unsupportedFrame = "unsupported_desktop_frame"
+    case invalidLease = "invalid_lease"
+    case desktopUnavailable = "desktop_unavailable"
+    case endpointMissing = "desktop_endpoint_missing"
+    case untrustedEndpoint = "untrusted_desktop_endpoint"
+    case permissionDenied = "desktop_permission_denied"
+    case connectionRefused = "desktop_connection_refused"
+    case connectionReset = "desktop_connection_reset"
+    case socketTimedOut = "desktop_socket_timed_out"
+    case openFailed = "desktop_open_failed"
+    case invalidReply = "desktop_invalid_reply"
+    case ioFailed = "desktop_io_failed"
+
+    static func helperReason(_ value: String?) -> Self {
+        // Helper receipts cannot claim command-side or timeout diagnoses.
+        switch value {
+        case "desktop_disconnected": .desktopDisconnected
+        case "controller_disconnected": .controllerDisconnected
+        case "desktop_attachment_failed": .attachmentFailed
+        case "desktop_handshake_failed": .handshakeFailed
+        case "unsupported_desktop_frame": .unsupportedFrame
+        case "invalid_lease": .invalidLease
+        case "desktop_endpoint_missing": .endpointMissing
+        case "untrusted_desktop_endpoint": .untrustedEndpoint
+        case "desktop_permission_denied": .permissionDenied
+        case "desktop_connection_refused": .connectionRefused
+        case "desktop_connection_reset": .connectionReset
+        case "desktop_socket_timed_out": .socketTimedOut
+        case "desktop_open_failed": .openFailed
+        case "desktop_invalid_reply": .invalidReply
+        case "desktop_io_failed": .ioFailed
+        default: .desktopUnavailable
+        }
+    }
+
+    var guidance: String {
+        switch self {
+        case .helperMissing:
+            "Rebuild NightBlood with its bundled desktop transcript helper."
+        case .commandFailed:
+            "Check the Mac has /usr/bin/python3, a current Codex app and permission to run the helper under this task's existing settings."
+        case .endpointMissing, .desktopDisconnected:
+            "Open Codex on the paired Mac and keep the selected task open, then reconnect."
+        case .untrustedEndpoint:
+            "The desktop connection did not pass its ownership and permissions checks. Inspect the Mac setup without weakening those checks."
+        case .attachmentFailed, .handshakeFailed, .unsupportedFrame, .readinessTimedOut:
+            "Update Codex on the paired Mac, reopen the selected task, then reconnect. If it persists, report this diagnostic code and the desktop version."
+        case .controllerDisconnected, .invalidLease:
+            "Keep NightBlood in the foreground while it connects, then reconnect."
+        case .helperEnded, .outputRejected, .desktopUnavailable:
+            "Check the desktop app and Python setup on the paired Mac. Report this diagnostic code and the desktop version if it persists."
+        case .permissionDenied:
+            "The Mac denied the helper access to its desktop connection. Inspect the selected task's permissions; do not disable them to reconnect."
+        case .connectionRefused, .connectionReset, .socketTimedOut:
+            "The desktop socket connection failed. Keep Codex open and report this diagnostic code."
+        case .openFailed:
+            "The helper could not open the selected task in Codex. Open that task on the paired Mac, then reconnect."
+        case .invalidReply, .ioFailed:
+            "The desktop connection returned an unexpected result. Report this diagnostic code and the desktop version."
+        }
+    }
+}
+
 enum CodexRemoteVoiceError: Error, LocalizedError, Sendable, Equatable {
     case applicationNotActive
     case invalidEnvironment
@@ -65,6 +139,7 @@ enum CodexRemoteVoiceError: Error, LocalizedError, Sendable, Equatable {
     case transportClosed
     case connectionFailed
     case desktopTranscriptUnavailable
+    case desktopTranscriptSetupFailed(CodexRemoteDesktopTranscriptFailure)
     case oversizedWebSocketFrame
     case malformedRemoteMessage
     case streamIdentityMismatch(field: String)
@@ -107,6 +182,8 @@ enum CodexRemoteVoiceError: Error, LocalizedError, Sendable, Equatable {
             "The secure Codex Remote connection failed."
         case .desktopTranscriptUnavailable:
             "NightBlood could not keep the transcript connected to Codex on your Mac. Reopen NightBlood to reconnect."
+        case .desktopTranscriptSetupFailed(let reason):
+            "Transcript connection failed (\(reason.rawValue)). \(reason.guidance)"
         case .oversizedWebSocketFrame:
             "Codex Remote returned an oversized message."
         case .malformedRemoteMessage:

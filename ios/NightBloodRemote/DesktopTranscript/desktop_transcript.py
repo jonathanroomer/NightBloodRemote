@@ -22,6 +22,28 @@ MAX_FRAME = 32 * 1024 * 1024
 LEASE_SECONDS = 90
 
 
+def failure_reason(error):
+    known = {"desktop_disconnected", "controller_disconnected",
+             "desktop_attachment_failed", "desktop_handshake_failed",
+             "unsupported_desktop_frame", "invalid_lease",
+             "untrusted_desktop_endpoint", "desktop_endpoint_missing"}
+    if isinstance(error, PermissionError):
+        return "desktop_permission_denied"
+    if isinstance(error, ConnectionRefusedError):
+        return "desktop_connection_refused"
+    if isinstance(error, (ConnectionResetError, BrokenPipeError)):
+        return "desktop_connection_reset"
+    if isinstance(error, TimeoutError):
+        return "desktop_socket_timed_out"
+    if isinstance(error, (subprocess.CalledProcessError, subprocess.TimeoutExpired)):
+        return "desktop_open_failed"
+    if isinstance(error, (json.JSONDecodeError, UnicodeDecodeError, TypeError, AttributeError)):
+        return "desktop_invalid_reply"
+    if isinstance(error, OSError):
+        return "desktop_io_failed"
+    return str(error) if str(error) in known else "desktop_unavailable"
+
+
 def canonical_id(value):
     parsed = str(uuid.UUID(value))
     if parsed != value:
@@ -221,16 +243,16 @@ def main():
         def receipt(event, reason=None):
             print(json.dumps({"event": event, "threadId": thread_id,
                               "nonce": nonce, "reason": reason}), flush=True)
-        follower = DesktopFollower(trusted_endpoint(codex_home), thread_id, receipt)
         try:
+            try:
+                endpoint = trusted_endpoint(codex_home)
+            except FileNotFoundError:
+                raise RuntimeError("desktop_endpoint_missing") from None
+            follower = DesktopFollower(endpoint, thread_id, receipt)
             follower.run()
             receipt("closed")
         except Exception as error:
-            known = {"desktop_disconnected", "controller_disconnected",
-                     "desktop_attachment_failed", "desktop_handshake_failed",
-                     "unsupported_desktop_frame", "invalid_lease"}
-            reason = str(error) if str(error) in known else "desktop_unavailable"
-            receipt("failed", reason)
+            receipt("failed", failure_reason(error))
             return 1
     except Exception:
         return 1
