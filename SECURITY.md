@@ -48,8 +48,10 @@ and model-visible project listing uses a fixed synthetic alias and path.
 
 - The direct relay endpoints, scopes, model name and attestation exchange are
   not documented public interfaces and may change or reject third-party apps.
-- The repository intentionally ships with no OAuth client ID. Reusing a
-  first-party application identifier is not an acceptable workaround.
+- The build includes the public Codex OAuth application ID from upstream
+  source. It is not a user credential or an endorsement of this integration.
+  Fresh-account Remote enrolment and voice remain unverified; each person
+  must authenticate and pair their own devices. Never redistribute tokens.
 - The public Codex App Server WebSocket transport is itself documented as
   experimental and unsupported for production workloads.
 - A selected Codex task may still perform powerful actions according to its

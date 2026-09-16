@@ -1,14 +1,16 @@
 # Public-source audit record
 
 This file explains the sanitisation decisions for reviewers. It contains no
-private values; omitted examples are described by category only.
+private values; omitted examples are described by category only. The September
+setup fix distinguishes the public upstream OAuth application ID from private
+account credentials.
 
 | Risk area | Public-package decision |
 |---|---|
 | Git identity and historical commits | New local repository with fresh, generic metadata; private history excluded |
 | Apple signing | Developer team, certificates, profiles, devices and generated Xcode project excluded |
 | Bundle identifiers | Replaced with `com.example` placeholders |
-| OAuth application identity | First-party identifier removed; tracked setting is blank |
+| OAuth application identity | Public upstream Codex identifier included in the reviewed build setting; no account credentials included |
 | Codex account metadata | Task, saved-project, host, environment, controller and account defaults removed |
 | Personal prompt text | Rewritten to address a generic user |
 | Personal UI labels and permission text | Rewritten to refer to the device owner or paired Mac |
@@ -29,9 +31,12 @@ private keys, private IPv4 addresses and known account-linked UUID shapes. It
 also rejects common signing, Xcode-user, Blender, audio and video artefacts and
 checks committed author metadata.
 
-The scanner deliberately excludes its own pattern definitions. A successful
-result means those specific patterns were absent; it does not prove the source
-is anonymous, legally clear or secure.
+The scanner deliberately excludes its own pattern definitions and permits the
+exact upstream Codex client ID only in its intended `project.yml` setting.
+The provenance is [OpenAI's public source](https://github.com/openai/codex/blob/main/codex-rs/login/src/auth/manager.rs).
+Other OAuth IDs or locations are rejected. A successful result means no
+unexpected matches were found; it does not prove the source is anonymous,
+legally clear or secure.
 
 ## Remaining review points
 

@@ -48,10 +48,10 @@ Important native components are:
   session.
 - `DirectVoiceSessionModel.swift`: one voice-session lifecycle and the
   one-use permission allowing the WebView to submit an SDP offer.
-- `CodexPlanOAuth.swift`: experimental PKCE sign-in, with a developer-supplied
-  client ID.
-- `CodexRemoteEnrolment*.swift`: device identity, DeviceCheck and controller
-  enrolment.
+- `CodexPlanOAuth.swift`: experimental PKCE sign-in using the reviewed public
+  upstream application ID supplied by the build, then the owner's own account.
+- `CodexRemoteEnrolment*.swift`: device identity and controller enrolment.
+- `CodexRemoteDeviceCheckAttestation.swift`: physical-device proof for voice.
 - `CodexRemoteController*.swift`: pairing, exact host selection, session-token
   refresh and WSS setup.
 - `CodexRemoteVoice*.swift`: bounded App Server and realtime protocol bridge.

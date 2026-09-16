@@ -1,8 +1,10 @@
 # Connections and setup
 
-This document separates what anyone can build today from the experimental
-connection code retained for study. Do not put an OAuth client ID, task ID,
-project ID, Apple team ID, token, host name or pairing code into a commit.
+For the click-by-click Mac and iPhone process, start with [Setup](SETUP.md).
+This document describes the experimental connection and its trust boundaries.
+The build includes one reviewed public upstream OAuth application ID. Do not
+commit account credentials, task/project IDs, Apple team IDs, host names or
+pairing codes.
 
 ## What works without a private service
 
@@ -13,14 +15,15 @@ project ID, Apple team ID, token, host name or pairing code into a commit.
 | TrueDepth gaze | No | Yes | No |
 | Face ID and Secure Enclave behaviour | Not authoritative | Yes | No |
 | Live Activity and background audio lifecycle | Partial | Yes | No |
-| Direct Codex Remote voice | No | Experimental | Yes; not publicly registerable here |
+| Direct Codex Remote voice | No | Experimental; fresh-account test pending | Own ChatGPT account with Codex/Remote access |
 | Public Codex App Server transport | Not implemented | Not implemented | Depends on your design |
 
-The repository deliberately ships with `CODEX_OAUTH_CLIENT_ID` empty and both
+The repository supplies the public upstream `CODEX_OAUTH_CLIENT_ID`, with both
 `NIGHTBLOOD_ENABLE_VOICE_TASK_CREATION` and
 `NIGHTBLOOD_ENABLE_VOICE_AUTOMATIONS` set to `NO`. The face demo remains
-usable; account connection and mutating Voice tools do not silently become
-available.
+usable. Signing in and pairing require the device owner's explicit actions.
+The included ID removes the earlier local sign-in blocker; it does not prove
+that the upstream Remote service accepts every account or signed build.
 
 ## Build and Apple signing
 
@@ -34,10 +37,11 @@ make simulator-build
 
 For a physical iPhone:
 
-1. Replace both `com.example` bundle identifiers in
-   `ios/NightBloodRemote/project.yml` with identifiers owned by you.
-2. Run `make ios-project`.
-3. Open the generated project and select your Apple development team locally.
+1. Run `make ios-project`.
+2. In the ignored generated Xcode project, replace both `com.example` bundle
+   identifiers with identifiers owned by you.
+3. Select your Apple development team on both targets. For phone-only testing
+   without CarPlay approval, follow the entitlement instructions in [Setup](SETUP.md).
 4. Confirm the app and Live Activity extension use the intended profiles and
    contain no unexpected entitlements.
 5. Build to a physical Face ID iPhone. Expect camera, Face ID and microphone
@@ -56,17 +60,18 @@ for a third-party iPhone controller of this kind. The relay paths, scopes,
 model name, attestation rules and response formats may change or reject your
 build.
 
-Do not extract or reuse a client ID from Codex, ChatGPT or another application.
-An OAuth client ID identifies the registered application; borrowing one is not
-a supported configuration and can misrepresent your app to the account owner
-and service.
+The included application ID is published in [OpenAI's Codex source](https://github.com/openai/codex/blob/main/codex-rs/login/src/auth/manager.rs).
+It is not a personal account ID, API key or secret. Each user signs into their
+own account and creates a separate device-bound controller. Users do not need
+to extract an identifier from an installed app or obtain a personal client ID.
+The public source is evidence for the value, not evidence that OpenAI supports
+this third-party Remote integration. Independent physical setup remains to be
+tested. Do not copy tokens, private keys or pairing records between users.
 
-If OpenAI has explicitly issued a registration for your application, keep the
-value out of tracked source:
+Optional local settings:
 
-1. Generate the Xcode project.
-2. In the local, ignored project, add the user-defined build setting
-   `CODEX_OAUTH_CLIENT_ID` to the app target.
+1. Generate the Xcode project before editing local settings.
+2. Keep the supplied OAuth application setting for the experimental route.
 3. If you want the bounded Voice tool to create another persistent local task
    using the current task's workspace and permission context, set
    `NIGHTBLOOD_ENABLE_VOICE_TASK_CREATION` to `YES` only in the ignored local
@@ -77,9 +82,9 @@ value out of tracked source:
 5. Rebuild and inspect the generated `Info.plist` in the local product. Never
    upload that product as a source artefact.
 
-The app also needs access to the experimental server-side controller feature
-and a supported physical iPhone. Supplying a string in Xcode cannot grant that
-access.
+The service still decides whether to accept enrolment, pairing and voice
+attestation. Keep those failures distinct from the now-corrected empty-setting
+error. This release does not establish universal account or signing support.
 
 ### Direct connection sequence
 
@@ -92,8 +97,7 @@ access.
    proofs leave the phone.
 3. **Fresh enrolment authority.** Native Swift requests the narrow
    `codex.remote_control.enroll` step-up scope, validates account claims and
-   freshness, obtains a DeviceCheck token, and performs the start/finish
-   challenge exchange.
+   freshness, and performs the start/finish device-key challenge exchange.
 4. **Manual pairing.** A supported Codex host must display a one-time,
    eight-character pairing code. The user enters that exact code on the phone.
    The attempt is single-use. An interrupted response is recorded as unknown,
@@ -109,7 +113,8 @@ access.
    connection to the selected environment through the relay.
 8. **App Server handshake.** The controller sends the bounded initialise
    exchange and binds all subsequent messages to the chosen account, client,
-   environment and task.
+   environment and task. When voice attestation is requested, the native
+   provider obtains a DeviceCheck token from the physical iPhone.
 9. **Voice start.** After a foreground user tap and Face ID, the WebView makes
    one microphone/WebRTC offer. Swift sends a `thread/realtime/start` request
    using the v3/WebRTC transport and the selected native character prompt,
@@ -159,7 +164,7 @@ automation configuration according to their normal retention behaviour.
 | `https://chatgpt.com/backend-api/` | experimental enrolment, pairing, environment and refresh requests | account/controller proofs and metadata |
 | `wss://chatgpt.com/backend-api/codex/remote/control/client` | experimental controller relay | bounded App Server and realtime messages |
 | iOS DeviceCheck service | request an Apple device token | Apple receives the token request |
-| experimental controller attestation exchange | enrolment proof | Apple token, bundle ID, up to 16 preferred language tags, locale, time zone, combined screen-point dimensions, screen scale, per-launch app-session UUID and token-generation latency |
+| experimental voice attestation exchange | physical-device proof requested by App Server | Apple token, bundle ID, up to 16 preferred language tags, locale, time zone, combined screen-point dimensions, screen scale, per-launch app-session UUID and token-generation latency |
 | `http://127.0.0.1:1455/auth/callback` or port 1457 | same-device OAuth callback | short-lived code and state |
 
 There is no Mac LAN listener in this target. The loopback HTTP callback stays
@@ -170,7 +175,7 @@ on the iPhone and exists only during sign-in.
 | Value | Where it belongs | Must never go |
 |---|---|---|
 | Apple team and signing identity | local Xcode/signing configuration | Git, screenshots, issue logs |
-| OAuth client ID | local ignored build setting, if officially issued | tracked source or copied from another app |
+| Public upstream OAuth application ID | reviewed project build setting, with upstream provenance | do not substitute account tokens or treat it as a personal credential |
 | OAuth and refresh tokens | device-only native Keychain | WebView, logs, crash text, Git |
 | Secure Enclave private key | Secure Enclave | export, logs, JavaScript |
 | Controller/session token | native memory | disk, WebView, logs |
@@ -206,8 +211,8 @@ long-lived server API key.
 
 ## Failure and recovery
 
-- **No OAuth client ID:** expected for the public build. Use demo mode; do not
-  hunt for a first-party ID.
+- **No OAuth client ID:** update the clone, regenerate the project and rebuild.
+  Check for an old local build-setting override. See [upgrade steps](SETUP.md#updating-an-existing-clone).
 - **Simulator enrolment failure:** expected. DeviceCheck, Secure Enclave,
   Face ID and TrueDepth must be judged on a supported physical device.
 - **Callback port unavailable:** end the current sign-in and inspect which

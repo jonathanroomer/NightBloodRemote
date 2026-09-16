@@ -92,11 +92,10 @@ targets:
         # Intentionally blank in the public source. Select your own team in
         # Xcode; never commit a personal development-team identifier.
         DEVELOPMENT_TEAM: ""
-        # OpenAI does not currently document public third-party Codex Remote
-        # OAuth client registration. Leave blank for demo builds. If OpenAI
-        # provides you with a client registration, configure it locally in
-        # Xcode without committing the value.
-        CODEX_OAUTH_CLIENT_ID: ""
+        # Public application identifier published in openai/codex, not a user
+        # credential. Each owner signs into their own account. The direct
+        # Remote protocol remains experimental; see docs/SETUP.md.
+        CODEX_OAUTH_CLIENT_ID: "app_EMoamEEZ73f0CkXaXp7hrann"
         # The bounded create_thread tool inherits the current task's native
         # workspace and permissions. It is deliberately off unless a fork
         # owner opts in through an uncommitted local build setting.

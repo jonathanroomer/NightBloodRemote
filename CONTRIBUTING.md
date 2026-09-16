@@ -12,6 +12,9 @@ make web
 make simulator-build
 ```
 
+For connection work, read [Setup](docs/SETUP.md) and [AGENTS.md](AGENTS.md).
 Real account and physical-device tests must use the contributor's own devices,
-accounts, bundle identifiers and explicitly issued credentials. Test values
-belong in local Xcode settings or the Keychain, never in fixtures or commits.
+accounts and bundle identifiers. The reviewed public OAuth application ID is
+build configuration, not a user credential. Account tokens and local signing
+values belong in the Keychain or ignored Xcode settings, never in fixtures or
+commits. Report the exact setup stage reached; compiling is not a voice test.

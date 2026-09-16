@@ -25,7 +25,26 @@ check_pattern "absolute home-directory paths" '/(Users|home)/[^[:space:]]+'
 check_pattern "email addresses" '[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}'
 check_pattern "private keys" 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY'
 check_pattern "hard-coded Apple team IDs" 'DEVELOPMENT_TEAM[[:space:]]*[:=][[:space:]]*[A-Z0-9]{10}'
-check_pattern "hard-coded OAuth application IDs" 'app_[A-Za-z0-9]{20,}'
+# Permit only the exact public upstream Codex client ID in its intended build
+# setting. Other identifiers, locations and extra text still fail this check.
+oauth_scan_status=0
+oauth_id_matches=$(rg -n -i --no-heading --hidden \
+  --glob '!.git/**' --glob '!scripts/audit-public-source.sh' \
+  --glob '!app/ui/package-lock.json' 'app_[A-Za-z0-9]{20,}' .) || oauth_scan_status=$?
+if [ "$oauth_scan_status" -gt 1 ]; then
+  printf '%s\n' "FAIL: OAuth application ID scan could not complete"
+  exit 1
+fi
+unexpected_oauth_ids=$(printf '%s\n' "$oauth_id_matches" \
+  | rg -v '^\./ios/NightBloodRemote/project\.yml:[0-9]+:        CODEX_OAUTH_CLIENT_ID: "app_EMoamEEZ73f0CkXaXp7hrann"$' \
+  | rg -v '^$' || true)
+if [ -n "$unexpected_oauth_ids" ]; then
+  printf '%s\n' "$unexpected_oauth_ids"
+  printf '%s\n' "FAIL: unreviewed OAuth application IDs"
+  failed=1
+else
+  printf '%s\n' "PASS: OAuth application IDs (one reviewed upstream build setting allowed)"
+fi
 check_pattern "real account-linked UUIDs" '01[0-9a-f]{6}-[0-9a-f-]{27,}'
 check_pattern "common committed secrets" "(api[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token)[[:space:]]*[:=][[:space:]]*[\"'][A-Za-z0-9_./+=-]{20,}[\"']"
 check_pattern "private IPv4 addresses" '(^|[^0-9])(10\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|192\.168\.[0-9]{1,3}\.[0-9]{1,3}|172\.(1[6-9]|2[0-9]|3[01])\.[0-9]{1,3}\.[0-9]{1,3})([^0-9]|$)'
