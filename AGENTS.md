@@ -52,8 +52,15 @@ only the owner's authorised choice. Do not keep changing unrelated settings.
    `make ios-project`. The supplied public `CODEX_OAUTH_CLIENT_ID` is deliberate
    and is not a user credential. Do not blank it or ask for an API key/personal
    OAuth client ID. Configure both app and extension bundle IDs and Apple team
-   locally. Follow Setup's phone-only entitlement instructions if CarPlay is
-   not approved. There is no `make setup` or `make doctor` yet.
+   locally. CarPlay stays enabled by default in tracked project settings.
+   Before installing, explain the Apple capability/profile step in
+   [CarPlay signing](docs/SETUP.md#carplay-signing-and-first-launch). Verify
+   the explicit App ID, signed entitlement and profile's inclusion of the
+   target device; one phone's working profile does not establish another's.
+   If CarPlay is not approved, explain that the optional phone-only build
+   will not appear in the car before using that local signing setting.
+   Never commit a phone-only override or private provisioning material.
+   There is no `make setup` or `make doctor` yet.
 5. **Prepare the device.** Connect, Trust, enable Developer Mode, restart,
    confirm Turn On, then unlock and keep the phone awake. Register that device
    with the signing team and ensure the development profile includes it.

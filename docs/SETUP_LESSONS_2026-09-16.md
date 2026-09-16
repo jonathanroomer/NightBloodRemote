@@ -15,7 +15,7 @@ while testing another device. These notes contain no real account/device IDs.
 | Device preparation | Trust alone did not enable development. A locked device can also block preparation. | Enable Developer Mode, restart, confirm Turn On and unlock to the Home Screen. Read the underlying Xcode device-preparation error rather than repeatedly rebuilding. |
 | Foreground authentication | The second phone later stopped at “Face ID required” before any Remote attempt. The tester resolved it and reached the earlier desktop error. | Check the local Face ID gate separately from Mac access. Passcode unlock is insufficient for the current app gate. Preserve the enrolled identity; a generic biometrics error is not evidence that pairing or Mac permissions changed. |
 | Provisioning | A new phone needed a matching development profile. | Use automatic signing/device registration or the Apple developer portal. If downloaded manually, confirm the actual file exists locally and includes the intended phone, App ID/team and required capabilities before building. A browser Download click is not proof the build tools have the file. |
-| CarPlay | A team's capability approval does not transfer to every fork. | Test phone-only first if the new signing identity lacks CarPlay approval. Preserve the tracked entitlement file and apply the documented local build setting. Free Personal Team and another team's DeviceCheck acceptance remain unverified. |
+| CarPlay | The original phone works in the car. The second phone's phone-only signed app and wildcard profile omit the CarPlay entitlement, so it does not appear there. | Keep CarPlay enabled by default in Git. Explain the capability/App ID/profile/device steps before installation, and the missing car app when deliberately choosing phone-only. Verify both signed entitlement and profile for each target phone. Free Personal Team and another team's DeviceCheck acceptance remain unverified. |
 | Workspace access | Another account had Codex access but immediate enrolment HTTP 403. Remote Control was disabled by its workspace administrator. | Check workspace/role Remote permission before phone enrolment, then complete this Mac's own Remote setup. Once enabled, that test reached enrolment, pairing and host confirmation. Not every 403 necessarily has this cause. |
 | Task selection | A confirmed Mac still did not make Voice ready while the task field was empty. | Require the local task link/UUID for the exact paired host/account. Pairing status and Ready to talk are different. Preserve task permissions if asking its agent for the UUID. |
 | Task permissions | The original working task changed from full access to a restricted workspace profile during testing. Its helper was then denied. | Check live task settings separately from workspace Remote permission. An exact-policy probe reproduced the denial. Restoring that owner's approved original task-specific full access restored phone voice without another install. Keep approval settings and global defaults intact. |
@@ -72,8 +72,9 @@ ability to choose a restricted task and normal approval handling.
   audit, signed device build and installed-version verification. The helper is
   unchanged from the 11 passing helper tests. These changes are saved in the
   public-source experiment and have not yet been pushed as a public update.
-- Another Apple signing team, free Personal Team signing and a new physical-car
-  test remain unverified. The second phone did validate the local phone-only
+- The owner confirms the original phone works in the car. CarPlay on the
+  second phone, another Apple signing team and free Personal Team signing
+  remain unverified. The second phone did validate the local phone-only
   entitlement setting with the existing developer team. Simulator checks alone
   cannot prove Secure Enclave, DeviceCheck, Face ID, relay identity or audio.
 

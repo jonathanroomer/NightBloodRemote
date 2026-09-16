@@ -182,8 +182,13 @@ and signing data do not wander into a commit.
 1. Follow [Setup](docs/SETUP.md) and read [Security](SECURITY.md).
 2. Generate the project, then set your own bundle identifiers and Apple team
    for the app and Live Activity extension in the ignored Xcode project.
-3. For phone-only testing without CarPlay approval, clear the app target's
-   Code Signing Entitlements build setting as described in Setup.
+3. **Choose CarPlay or phone-only before installing.** CarPlay is enabled in
+   the project by default, but Apple must approve the capability for your
+   team/app. Enable it on your explicit App ID and use a development profile
+   that includes the entitlement and the target phone. Follow the
+   [CarPlay signing steps](docs/SETUP.md#carplay-signing-and-first-launch).
+   If you choose the documented phone-only build instead, NightBlood will
+   work on the phone but **will not appear in CarPlay**.
 4. Keep the included public OAuth client configuration. Sign in to your own
    ChatGPT account on both devices.
 5. Leave `NIGHTBLOOD_ENABLE_VOICE_AUTOMATIONS` set to `NO` unless you have

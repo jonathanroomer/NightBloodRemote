@@ -150,12 +150,19 @@ In the generated Xcode project:
    you control and select your Apple development team in Signing & Capabilities.
 2. Do the same for **NightBloodLiveActivity**, using the same team and a distinct
    identifier prefixed by your app's identifier, for example with `.liveactivity`.
-3. **Phone-only, without CarPlay approval:** on the app target, open Build
+3. **Choose signing before installing.** The project enables CarPlay by
+   default. To use it, complete [CarPlay signing](#carplay-signing-and-first-launch):
+   Apple's capability approval, an explicit App ID with that capability,
+   and a development profile that includes this phone and entitlement.
+   These are Apple account/device steps; cloning Git cannot complete them.
+   **Phone-only, without CarPlay approval:** on the app target, open Build
    Settings, choose All, search **Code Signing Entitlements**, and clear its
    value for the configuration you will build. This omits the managed CarPlay
    entitlement from that signed product. It does not disable Face ID or
    bypass device attestation. Leave the tracked entitlement file unchanged.
-   This signing workaround is not yet physically verified for a fresh account.
+   **This build will not appear in CarPlay**, even if phone voice works.
+   This option passed on a second phone/account using the existing developer
+   team; a different signing team remains unverified.
 4. Keep `CODEX_OAUTH_CLIENT_ID` at the supplied value. Leave the optional
    `NIGHTBLOOD_ENABLE_VOICE_TASK_CREATION` and
    `NIGHTBLOOD_ENABLE_VOICE_AUTOMATIONS` settings at `NO` for the initial test.
@@ -256,12 +263,36 @@ optional build switches control additional tools, not a read-only mode:
 Enable only the capabilities you want in local app-target build settings and
 rebuild. Read [Connections](CONNECTIONS.md#bounded-voice-tool-authority) first.
 
-For CarPlay, finish phone setup first. Obtain Apple's **Voice Based Conversation**
-entitlement approval for your developer account/app, enable it on your App ID
-and refresh provisioning. Restore the app target's Code Signing Entitlements
-value to `NightBloodRemote/NightBloodRemoteCarPlay.entitlements`, then rebuild.
+### CarPlay signing and first launch
+
+CarPlay is enabled by default in the tracked project. Before installing a
+CarPlay build, complete these signing steps:
+
+1. Obtain Apple's **Voice Based Conversation** capability approval for your
+   developer team/app. In Certificates, Identifiers & Profiles, use an
+   **explicit App ID** matching the app's bundle identifier and enable the
+   approved capability. A wildcard phone-only profile is insufficient.
+2. Register the target iPhone with that team. Generate or refresh its iOS
+   development provisioning profile with that App ID, development certificate
+   and phone selected. Automatic signing can manage the profile when the
+   capability is available to the team/App ID. Keep the extension's signing
+   consistent with the app.
+3. Keep the app target's Code Signing Entitlements set to
+   `NightBloodRemote/NightBloodRemoteCarPlay.entitlements`; restore it if you
+   previously chose phone-only testing. Use the updated profile and rebuild.
+4. Before installation, verify the signed app and embedded profile both allow
+   `com.apple.developer.carplay-voice-based-conversation`, and that the profile
+   includes the target iPhone. A working profile for another phone is not enough.
+   Keep profiles, certificates and device/team identifiers out of Git.
+5. Install and finish phone authorisation, pairing and voice verification.
+   While parked, connect that phone to CarPlay and open NightBlood from the
+   car's app grid; it need not open automatically. Check the other app pages
+   and **iPhone Settings → General → CarPlay → your car → Customise** if needed.
+   If absent from that list, check the installed build's signing first.
+
 Apple explains the [entitlement and profile process](https://developer.apple.com/documentation/carplay/requesting-carplay-entitlements).
 Membership alone does not transfer the creator's approval to your app.
+See also Apple's [CarPlay app arrangement instructions](https://support.apple.com/en-gb/108415).
 
 The CarPlay integration requires iOS 26.4 or later. Test while parked: app
 visibility, locked-phone launch after first unlock, vehicle microphone/speakers,
@@ -307,6 +338,7 @@ shared Keychain access groups or copy credentials between them.
 | Voice works from Home but opening Settings produces a secure-connection error | Older builds unnecessarily restart setup when Settings appears. The fix passed the original phone's physical checks in build 26 and is in the public experiment; check release status before updating. In the earlier observed case, reopening the app and starting voice from Home works. This symptom does not by itself call for re-enrolment or more permission changes. |
 | Voice attestation failed | Check physical device/signing and record the redacted failure. Never invent a DeviceCheck proof. |
 | CarPlay signing error | Use the phone-only setting until your App ID/profile has Apple's approval. |
+| Voice works on the phone but NightBlood is absent from CarPlay | A phone-only build omits the required entitlement. Complete the CarPlay signing steps, including this phone in the profile, and reinstall; do not change Codex pairing to fix app visibility. |
 
 For reports, include the public commit, app/build, Xcode, iOS and desktop app
 versions, which stage failed and a redacted error. Do not include passwords,
