@@ -3,9 +3,9 @@ import Foundation
 import Security
 @preconcurrency import UIKit
 
-/// Experimental Codex Remote OAuth values. The public source deliberately has
-/// no first-party client identifier. A developer-supplied identifier is read
-/// from the generated Info.plist at runtime.
+/// Experimental Codex Remote OAuth values. The reviewed public application
+/// identifier is supplied by the generated Info.plist. Each user authorises
+/// their own account; no account credential is compiled into the app.
 public enum CodexPlanOAuthConstants {
     public static let authorizationEndpoint = URL(
         string: "https://auth.openai.com/oauth/authorize"

@@ -14,6 +14,12 @@ OpenAI account and Apple signing identity. The Remote protocol is experimental
 and upstream acceptance can vary. Report the stage that fails rather than
 assuming a build or successful sign-in proves the whole connection works.
 
+A physical test on 16 September reached browser sign-in with another Codex
+account on a second iPhone, signed by the existing developer team. Its initial
+enrolment request returned HTTP 403 before the additional authorisation screen.
+The cause is not established. This confirms installation and sign-in only,
+not enrolment, pairing, voice or support for another Apple developer team.
+
 ## 1. Prepare the Mac
 
 - Install/update the ChatGPT/Codex desktop app, sign in and confirm a local
@@ -71,9 +77,22 @@ In the generated Xcode project:
 4. Keep `CODEX_OAUTH_CLIENT_ID` at the supplied value. Leave the optional
    `NIGHTBLOOD_ENABLE_VOICE_TASK_CREATION` and
    `NIGHTBLOOD_ENABLE_VOICE_AUTOMATIONS` settings at `NO` for the initial test.
-5. Connect and trust your iPhone, enable Developer Mode if Xcode requests it,
-   select the **NightBloodRemote** scheme and the physical device, then Run.
-   Review any signing/profile error before proceeding.
+5. Connect the unlocked iPhone to the Mac and accept **Trust This Computer**
+   on the phone. In **Settings → Privacy & Security → Developer Mode**, turn
+   Developer Mode on, restart, then confirm **Turn On** and enter the phone's
+   passcode when prompted. Developer Mode is required for this Xcode-installed
+   build. If the setting is missing, first pair the phone with Xcode.
+6. Unlock the phone to its Home Screen and keep it awake while Xcode prepares
+   and installs the app. Select the **NightBloodRemote** scheme and the physical
+   device, then Run. With automatic signing, accept device registration if
+   Xcode requests it. Review any signing/profile error before proceeding.
+
+A tester does not need their own Apple developer membership when you sign the
+build with your existing developer team and register their phone for testing.
+Their Apple/iCloud account can stay unchanged. This tests your team's signing;
+it does not establish that free Personal Team signing works. See Apple's
+[registered-device testing](https://developer.apple.com/documentation/xcode/distributing-your-app-to-registered-devices)
+and [Developer Mode instructions](https://developer.apple.com/documentation/xcode/enabling-developer-mode-on-a-device).
 
 Generated project edits are local and ignored by Git. **Running `make ios-project`
 again replaces them.** Record your team, bundle IDs and phone-only entitlement
@@ -162,7 +181,11 @@ shared Keychain access groups or copy credentials between them.
 | Symptom | Next step |
 |---|---|
 | Missing OAuth client ID | Follow the upgrade steps and inspect effective app-target settings. An API key is not the solution. |
+| Developer Mode disabled | Enable it on the phone, restart, confirm Turn On, and unlock before installation. Trusting the Mac alone is not enough. |
+| Developer disk image could not be mounted | Read the underlying Xcode error. If it says the device is locked, unlock to the Home Screen and keep it awake while Xcode prepares it. Report other underlying errors instead of repeatedly rebuilding. |
+| No Accounts / profile does not include this device | Sign into the intended developer account in Xcode Settings → Apple Accounts, select its team and let automatic signing register the phone. An existing certificate can sign a build without being able to register a new phone. Alternatively, register the phone and create/download a matching development profile through Apple's developer website. |
 | Browser login fails | Check the account/workspace and redacted OAuth error. The iPhone's callback ports are loopback-only. |
+| HTTP 403 immediately on Enrol this iPhone | This is enrolment start, before device-key creation or Mac pairing. Check official Remote availability and enablement for the same account/workspace; ordinary Codex access alone is not proof. Record the displayed stage, response format and any recognised service code. An HTML refusal may come from a network or edge service. The status alone does not establish the cause; do not change app identity or bypass verification to force access. |
 | Enrolment fails or lacks fresh password authentication | Report that stage and login method. The current validator requires a fresh `pwd_auth_time` claim; SSO/passkey compatibility is not established. Do not remove the check. |
 | Pairing outcome unknown | Refresh paired-Mac state before deciding on another attempt. |
 | No online Mac | Check same account/workspace, Remote enabled, desktop app running and Mac awake; refresh. |
@@ -173,6 +196,11 @@ shared Keychain access groups or copy credentials between them.
 For reports, include the public commit, app/build, Xcode, iOS and desktop app
 versions, which stage failed and a redacted error. Do not include passwords,
 tokens, pairing codes, task links, device IDs or raw authentication logs.
+
+Enrolment error diagnostics retain only the stage, HTTP status, response format
+and a fixed set of recognised service codes. Unknown codes and arbitrary server
+messages are intentionally omitted. Enrolment completion with an uncertain
+outcome still requires review and is never automatically retried.
 
 Another OpenAI account can be tested on the same iPhone with a separately
 installed build, but the Mac host must use that same test account/workspace.

@@ -134,6 +134,8 @@ result as a small set of runtime parameters. The full route is in
 - Node.js 20.19 or later (or 22.12 or later) and npm.
 - A physical Face ID iPhone for Secure Enclave, DeviceCheck, TrueDepth and real
   microphone and speaker testing.
+- Developer Mode enabled on that iPhone for installation through Xcode. Enable
+  it, restart and confirm Turn On as described in [Setup](docs/SETUP.md).
 - Blender 5.2 or later, but only if you want to regenerate the design studies.
 
 ## Build the safe Simulator demo

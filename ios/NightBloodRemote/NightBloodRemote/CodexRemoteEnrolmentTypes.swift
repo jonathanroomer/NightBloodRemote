@@ -18,6 +18,87 @@ enum CodexRemoteEnrolmentConstants {
     static let stepUpMaximumAgeSeconds: TimeInterval = 300
 }
 
+/// Keeps only fixed diagnostic categories. Never retain or display arbitrary
+/// response messages, account details, tokens or request bodies.
+struct CodexRemoteEnrolmentRejection: Sendable, CustomStringConvertible {
+    enum Stage: String, Sendable {
+        case start = "enrolment start"
+        case stepUpToken = "additional authorisation token exchange"
+    }
+
+    enum ResponseKind: String, Sendable {
+        case json = "JSON"
+        case html = "HTML"
+        case other = "unrecognised content"
+        case empty = "empty body"
+    }
+
+    enum ServiceCode: String, Sendable {
+        case accessDenied = "access_denied"
+        case forbidden
+        case unauthorized
+        case permissionDenied = "permission_denied"
+        case insufficientScope = "insufficient_scope"
+        case invalidScope = "invalid_scope"
+        case invalidToken = "invalid_token"
+        case invalidRequest = "invalid_request"
+        case featureDisabled = "feature_disabled"
+        case featureNotEnabled = "feature_not_enabled"
+        case remoteControlDisabled = "remote_control_disabled"
+        case remoteControlNotEnabled = "remote_control_not_enabled"
+        case accountDeactivated = "account_deactivated"
+        case unsupportedClient = "unsupported_client"
+    }
+
+    let stage: Stage
+    let statusCode: Int
+    let responseKind: ResponseKind
+    let serviceCode: ServiceCode?
+
+    init(stage: Stage, response: CodexRemoteHTTPResponse) {
+        self.stage = stage
+        statusCode = response.statusCode
+        if response.body.isEmpty {
+            responseKind = .empty
+            serviceCode = nil
+        } else if let json = try? JSONSerialization.jsonObject(
+            with: response.body, options: [.fragmentsAllowed]
+        ) {
+            responseKind = .json
+            let object = json as? [String: Any]
+            let error = object?["error"] as? [String: Any]
+            let detail = object?["detail"] as? [String: Any]
+            let candidates = [error?["code"], detail?["code"], object?["code"], object?["error"]]
+            serviceCode = candidates.compactMap { value in
+                (value as? String).flatMap(ServiceCode.init(rawValue:))
+            }.first
+        } else {
+            let prefix = String(decoding: response.body.prefix(256), as: UTF8.self)
+                .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            responseKind = prefix.hasPrefix("<!doctype html") || prefix.hasPrefix("<html")
+                ? .html : .other
+            serviceCode = nil
+        }
+    }
+
+    var description: String {
+        var text = "Codex Remote rejected \(stage.rawValue) (HTTP \(statusCode)). "
+            + "Response: \(responseKind.rawValue)."
+        if let serviceCode { text += " Service code: \(serviceCode.rawValue)." }
+        if stage == .start {
+            text += " This happened before device-key creation or Mac pairing."
+        }
+        if statusCode == 403 {
+            if responseKind == .html {
+                text += " An HTML refusal may come from a network or edge service; it does not establish an account-access failure."
+            } else {
+                text += " Check Remote access for this account and workspace in the official app. A 403 alone does not identify the cause."
+            }
+        }
+        return text
+    }
+}
+
 enum CodexRemoteEnrolmentError: Error, LocalizedError, Sendable {
     case alreadyInProgress
     case existingState(CodexRemoteEnrolmentState)
@@ -35,6 +116,7 @@ enum CodexRemoteEnrolmentError: Error, LocalizedError, Sendable {
     case randomGenerationFailed(status: OSStatus)
     case transportFailed
     case responseRejected(statusCode: Int)
+    case enrolmentRequestRejected(CodexRemoteEnrolmentRejection)
     case oversizedResponse
     case invalidResponse
     case accountMismatch
@@ -85,6 +167,8 @@ enum CodexRemoteEnrolmentError: Error, LocalizedError, Sendable {
             "The Codex Remote service could not be reached."
         case .responseRejected(let statusCode):
             "The Codex Remote service rejected the request (HTTP \(statusCode))."
+        case .enrolmentRequestRejected(let rejection):
+            rejection.description
         case .oversizedResponse:
             "The Codex Remote service returned an oversized response."
         case .invalidResponse:
