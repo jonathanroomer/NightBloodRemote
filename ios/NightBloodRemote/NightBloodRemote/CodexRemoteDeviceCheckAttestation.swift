@@ -1,13 +1,32 @@
 @preconcurrency import DeviceCheck
+@preconcurrency import CarPlay
 import Foundation
 @preconcurrency import UIKit
+
+@MainActor
+enum NightBloodVoiceSceneActivity {
+    static var isIPhoneApplicationActive: Bool {
+        UIApplication.shared.applicationState == .active
+    }
+
+    static var isCarPlayActive: Bool {
+        UIApplication.shared.connectedScenes.contains { scene in
+            scene is CPTemplateApplicationScene
+                && scene.activationState == .foregroundActive
+        }
+    }
+
+    static var isInteractive: Bool {
+        isIPhoneApplicationActive || isCarPlayActive
+    }
+}
 
 struct CodexRemoteVoiceApplicationForegroundProvider:
     CodexRemoteVoiceForegroundProviding
 {
     func isApplicationActive() async -> Bool {
         await MainActor.run {
-            UIApplication.shared.applicationState == .active
+            NightBloodVoiceSceneActivity.isInteractive
         }
     }
 }
@@ -35,12 +54,10 @@ actor CodexRemoteDeviceCheckAttestationProvider:
             else {
                 return nil
             }
-            guard let screen = UIApplication.shared.connectedScenes
+            let screen = UIApplication.shared.connectedScenes
                 .compactMap({ ($0 as? UIWindowScene)?.screen })
                 .first
-            else {
-                return nil
-            }
+                ?? UIScreen.main
             let languages = Array(Locale.preferredLanguages.prefix(16)).map {
                 String($0.prefix(64))
             }

@@ -57,6 +57,11 @@ async function waitForIceGathering(peer: RTCPeerConnection): Promise<void> {
  * is discarded during parsing and is never forwarded to native callbacks.
  */
 export class DirectRealtimeVoice {
+  private static cueCache = new Map<string, Promise<AudioBuffer>>();
+  private selectedStartupCue: DirectRealtimeStartupCue | null = null;
+  private performanceOrigin = 0;
+  private firstOutputSeen = false;
+
   private peer: RTCPeerConnection | null = null;
   private stream: MediaStream | null = null;
   private audio: HTMLAudioElement | null = null;
@@ -172,6 +177,9 @@ export class DirectRealtimeVoice {
     this.outputMuted = false;
     this.uplinkBaselinePending = false;
     const generation = ++this.generation;
+    this.selectedStartupCue = this.options.getStartupCue?.() ?? null;
+    this.performanceOrigin = performance.now();
+    this.firstOutputSeen = false;
     this.cb.onState("starting");
     try {
       await this.connect(generation);
@@ -214,6 +222,7 @@ export class DirectRealtimeVoice {
       stream.getTracks().forEach((track) => track.stop());
       throw new Error("The iPhone microphone did not provide one audio track.");
     }
+    this.tracePerformance("microphone.acquired");
     this.stream = stream;
     audioTracks[0].enabled = !this.inputMuted;
     this.cb.onEvent("microphone-ready", {
@@ -275,6 +284,7 @@ export class DirectRealtimeVoice {
       throw new Error("The iPhone produced an invalid WebRTC offer.");
     }
 
+    this.tracePerformance("offer.ready");
     const reply = await this.signalling.start(sdpOffer);
     if (peer !== this.peer || generation !== this.generation) return;
     if (reply.serverStarted !== true || !reply.sdp.startsWith("v=0")
@@ -329,14 +339,32 @@ export class DirectRealtimeVoice {
       currentTrack.enabled = !this.inputMuted;
       this.uplinkBaselinePending = !this.inputMuted;
     }
+    this.tracePerformance("microphone.ready");
     this.cb.onEvent("session-ready");
     this.cb.onState("live");
     this.watchUplink(generation);
   }
 
+  private decodeStartupCue(context: AudioContext, cue: DirectRealtimeStartupCue): Promise<AudioBuffer> {
+    const cached = DirectRealtimeVoice.cueCache.get(cue.name);
+    if (cached) return cached;
+    const decoded = context.decodeAudioData(DirectRealtimeVoice.decodeDataUrl(cue.dataUrl));
+    DirectRealtimeVoice.cueCache.set(cue.name, decoded);
+    while (DirectRealtimeVoice.cueCache.size > 4) {
+      const oldest = DirectRealtimeVoice.cueCache.keys().next().value;
+      if (oldest) DirectRealtimeVoice.cueCache.delete(oldest);
+    }
+    void decoded.catch(() => {
+      if (DirectRealtimeVoice.cueCache.get(cue.name) === decoded) {
+        DirectRealtimeVoice.cueCache.delete(cue.name);
+      }
+    });
+    return decoded;
+  }
+
   private async playCharacterStartupCue(): Promise<void> {
     const context = this.audioContext;
-    const cue = this.options.getStartupCue?.();
+    const cue = this.selectedStartupCue;
     if (!context || !cue) {
       await this.playListeningReadyCue();
       return;
@@ -344,7 +372,7 @@ export class DirectRealtimeVoice {
 
     try {
       await context.resume();
-      const audio = await context.decodeAudioData(DirectRealtimeVoice.decodeDataUrl(cue.dataUrl));
+      const audio = await this.decodeStartupCue(context, cue);
       if (context !== this.audioContext || context.state === "closed") return;
       await new Promise<void>((resolve) => {
         const source = context.createBufferSource();
@@ -436,6 +464,9 @@ export class DirectRealtimeVoice {
     analyser.fftSize = 512;
     source.connect(analyser);
     this.audioContext = context;
+    if (this.selectedStartupCue) {
+      void this.decodeStartupCue(context, this.selectedStartupCue).catch(() => undefined);
+    }
     this.analyser = analyser;
     void context.resume();
     this.tryActivate(this.generation);
@@ -453,6 +484,11 @@ export class DirectRealtimeVoice {
       const gated = rms <= 0.018 ? 0 : Math.min(1, (rms - 0.018) / 0.12);
       this.outputEnvelope = gated > this.outputEnvelope ? gated : this.outputEnvelope * 0.82;
       if (this.outputEnvelope < 0.002) this.outputEnvelope = 0;
+      if (this.activated && !this.startupCuePlaying && !this.outputMuted
+          && this.outputEnvelope > 0.02 && !this.firstOutputSeen) {
+        this.firstOutputSeen = true;
+        this.tracePerformance("output.first");
+      }
       this.cb.onAmplitude(this.outputEnvelope);
       this.amplitudeFrame = window.requestAnimationFrame(tick);
     };
@@ -494,7 +530,10 @@ export class DirectRealtimeVoice {
       this.finalAssistantTranscript = null;
       this.cb.onEvent("speech-started");
     }
-    if (type === "input_audio_buffer.speech_stopped") this.cb.onEvent("speech-stopped");
+    if (type === "input_audio_buffer.speech_stopped") {
+      this.firstOutputSeen = false;
+      this.cb.onEvent("speech-stopped");
+    }
     // These are the two bounded handoff markers used by current Codex Voice.
     // They contain no task result or credential; they simply let the face
     // acknowledge immediately that the backing Codex turn is beginning. The
@@ -507,6 +546,11 @@ export class DirectRealtimeVoice {
       this.finishInputTranscript(event.transcript);
     }
     if (type === "input_transcript.added" && event.item?.text) {
+      if (this.finalInputTranscript
+        && DirectRealtimeVoice.isCoveredByFinal(
+          event.item.text,
+          this.finalInputTranscript,
+        )) return;
       const current = this.mergeTranscriptPart(event.item.text);
       this.cb.onTranscript("user", current, false);
       this.scheduleInputTranscriptDone();
@@ -519,6 +563,11 @@ export class DirectRealtimeVoice {
       this.finishAssistant(event.transcript);
     }
     if (type === "output_transcript.added" && event.item?.text) {
+      if (this.finalAssistantTranscript
+        && DirectRealtimeVoice.sameTranscript(
+          event.item.text,
+          this.finalAssistantTranscript,
+        )) return;
       this.beginAssistantSpeaking();
       this.cb.onTranscript("assistant", event.item.text, false);
     }
@@ -539,6 +588,22 @@ export class DirectRealtimeVoice {
     this.inputTranscriptParts.push(...words.slice(overlap));
     const terminal = part.trim().match(/[.!?]$/)?.[0] ?? "";
     return this.inputTranscriptParts.join(" ") + terminal;
+  }
+
+  private static normaliseTranscript(text: string): string {
+    return text.trim().toLocaleLowerCase().replace(/\s+/g, " ");
+  }
+
+  private static sameTranscript(left: string, right: string): boolean {
+    return DirectRealtimeVoice.normaliseTranscript(left)
+      === DirectRealtimeVoice.normaliseTranscript(right);
+  }
+
+  private static isCoveredByFinal(candidate: string, final: string): boolean {
+    const partial = DirectRealtimeVoice.normaliseTranscript(candidate);
+    const complete = DirectRealtimeVoice.normaliseTranscript(final);
+    return partial.length > 0
+      && (partial === complete || complete.startsWith(partial));
   }
 
   private scheduleInputTranscriptDone() {
@@ -574,6 +639,13 @@ export class DirectRealtimeVoice {
     this.cb.onTranscript("assistant", bounded, true);
   }
 
+  private tracePerformance(stage: string, metrics: Record<string, number> = {}) {
+    this.cb.onEvent("performance", {
+      stage, elapsedMs: Math.round((performance.now() - this.performanceOrigin) * 10) / 10,
+      ...metrics,
+    });
+  }
+
   private watchUplink(generation: number) {
     let sampleInFlight = false;
     this.statsTimer = window.setInterval(() => {
@@ -586,11 +658,20 @@ export class DirectRealtimeVoice {
           const stats = await peer.getStats();
           if (peer !== this.peer || generation !== this.generation) return;
           let bytesSent = 0;
+          const network: Record<string, number> = {};
           stats.forEach((report) => {
+            if (report.type === "candidate-pair" && report.state === "succeeded" && report.nominated) {
+              network.rttMs = Number(report.currentRoundTripTime ?? 0) * 1_000;
+            }
+            if (report.type === "inbound-rtp" && report.kind === "audio") {
+              network.jitterMs = Number(report.jitter ?? 0) * 1_000;
+              network.packetsLost = Math.max(0, Number(report.packetsLost ?? 0));
+            }
             if (report.type === "outbound-rtp" && report.kind === "audio") {
               bytesSent += (report as RTCOutboundRtpStreamStats).bytesSent ?? 0;
             }
           });
+          this.tracePerformance("network.stats", network);
           if (this.inputMuted) {
             // A deliberately disabled audio track may stop increasing bytesSent.
             // Keep the peer alive and resume the health check after unmuting.

@@ -1,3 +1,4 @@
+import { startFaceRenderLoop } from "./renderLoop";
 /**
  * FaceCanvas: the NightBlood face as a live WebGL canvas.
  *
@@ -95,10 +96,14 @@ export function FaceCanvas({
     }
     rendererRef.current = renderer;
 
-    let raf = 0;
     const t0 = performance.now();
-    const frame = () => {
-      const now = (performance.now() - t0) / 1000;
+    const stopRendering = startFaceRenderLoop(canvas, () => ({
+      state: inputs.current.state,
+      level: inputs.current.liveAmplitude?.() ?? inputs.current.amplitude,
+      ready: inputs.current.readyFlashStartedAtMs != null
+        && performance.now() - inputs.current.readyFlashStartedAtMs < 2_700,
+    }), (nowMs, w, h) => {
+      const now = (nowMs - t0) / 1000;
       const {
         state, amplitude, reducedMotion: rm, liveAmplitude: live,
         readyFlashStartedAtMs: flashStartedAt, liveWatched: watchedNow,
@@ -112,21 +117,12 @@ export function FaceCanvas({
       const ready = flashStartedAt == null
         ? 0
         : readyFlashEnvelope(performance.now() - flashStartedAt);
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
-      const w = Math.round(canvas.clientWidth * dpr);
-      const h = Math.round(canvas.clientHeight * dpr);
-      if (canvas.width !== w || canvas.height !== h) {
-        canvas.width = w;
-        canvas.height = h;
-      }
       // The renderer applies this only inside each almond. It deliberately
       // bypasses the state-tint path, which colours the surrounding halo too.
       renderer.render(uniforms, w, h, 0, 0, ready);
-      raf = requestAnimationFrame(frame);
-    };
-    raf = requestAnimationFrame(frame);
+    });
     return () => {
-      cancelAnimationFrame(raf);
+      stopRendering();
       renderer.dispose();
       rendererRef.current = null;
       directorRef.current = null;

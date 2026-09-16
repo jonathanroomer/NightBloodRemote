@@ -58,11 +58,14 @@ actor CodexRemotePairingLifecycleStore: CodexRemotePairingLifecycleStoring {
         "com.example.nightblood.remote.codex-controller-pairing-lifecycle"
 
     private let service: String
+    private let allowsBackgroundAccess: Bool
 
     init(
-        service: String = CodexRemotePairingLifecycleStore.defaultService
+        service: String = CodexRemotePairingLifecycleStore.defaultService,
+        allowsBackgroundAccess: Bool = false
     ) {
         self.service = service
+        self.allowsBackgroundAccess = allowsBackgroundAccess
     }
 
     func prepare(
@@ -84,8 +87,7 @@ actor CodexRemotePairingLifecycleStore: CodexRemotePairingLifecycleStoring {
         )
         var item = baseQuery(accountUserID: accountUserID, clientID: clientID)
         item[kSecValueData as String] = try encode(record)
-        item[kSecAttrAccessible as String] =
-            kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        item[kSecAttrAccessible as String] = expectedAccessibility
         let status = SecItemAdd(item as CFDictionary, nil)
         if status == errSecDuplicateItem,
            let existing = try load(
@@ -122,8 +124,7 @@ actor CodexRemotePairingLifecycleStore: CodexRemotePairingLifecycleStoring {
         )
         let attributes: [String: Any] = [
             kSecValueData as String: try encode(replacement),
-            kSecAttrAccessible as String:
-                kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+            kSecAttrAccessible as String: expectedAccessibility,
         ]
         let status = SecItemUpdate(
             baseQuery(accountUserID: accountUserID, clientID: clientID)
@@ -154,8 +155,7 @@ actor CodexRemotePairingLifecycleStore: CodexRemotePairingLifecycleStoring {
         )
         let attributes: [String: Any] = [
             kSecValueData as String: try encode(confirmed),
-            kSecAttrAccessible as String:
-                kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+            kSecAttrAccessible as String: expectedAccessibility,
         ]
         let query = baseQuery(accountUserID: accountUserID, clientID: clientID)
         var status = SecItemUpdate(
@@ -195,8 +195,7 @@ actor CodexRemotePairingLifecycleStore: CodexRemotePairingLifecycleStoring {
             throw CodexRemoteEnrolmentError.keychain(status: status)
         }
         let accessibility = result[kSecAttrAccessible as String] as? String
-        guard accessibility
-            == (kSecAttrAccessibleWhenUnlockedThisDeviceOnly as String)
+        guard accessibility == (expectedAccessibility as String)
         else {
             throw CodexRemoteEnrolmentError.keychainProtectionMismatch
         }
@@ -232,6 +231,12 @@ actor CodexRemotePairingLifecycleStore: CodexRemotePairingLifecycleStoring {
             ),
             kSecAttrSynchronizable as String: false,
         ]
+    }
+
+    private var expectedAccessibility: CFString {
+        allowsBackgroundAccess
+            ? kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            : kSecAttrAccessibleWhenUnlockedThisDeviceOnly
     }
 
     private func recordKey(accountUserID: String, clientID: String) -> String {

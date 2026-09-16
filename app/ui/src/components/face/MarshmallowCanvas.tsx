@@ -1,3 +1,4 @@
+import { startFaceRenderLoop } from "./renderLoop";
 import { useEffect, useRef } from "react";
 
 import { readyFlashEnvelope, type FaceCanvasProps } from "./FaceCanvas";
@@ -49,10 +50,14 @@ export function MarshmallowCanvas({
       return;
     }
 
-    let animationFrame = 0;
     const startedAt = performance.now();
-    const frame = () => {
-      const now = (performance.now() - startedAt) / 1_000;
+    const stopRendering = startFaceRenderLoop(canvas, () => ({
+      state: inputs.current.state,
+      level: inputs.current.liveAmplitude?.() ?? inputs.current.amplitude,
+      ready: inputs.current.readyFlashStartedAtMs != null
+        && performance.now() - inputs.current.readyFlashStartedAtMs < 2_700,
+    }), (nowMs, width, height) => {
+      const now = (nowMs - startedAt) / 1_000;
       const current = inputs.current;
       const level = current.liveAmplitude ? current.liveAmplitude() : current.amplitude;
       director.setReducedMotion(current.reducedMotion);
@@ -62,19 +67,10 @@ export function MarshmallowCanvas({
       const ready = current.readyFlashStartedAtMs == null
         ? 0
         : readyFlashEnvelope(performance.now() - current.readyFlashStartedAtMs);
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
-      const width = Math.max(1, Math.round(canvas.clientWidth * dpr));
-      const height = Math.max(1, Math.round(canvas.clientHeight * dpr));
-      if (canvas.width !== width || canvas.height !== height) {
-        canvas.width = width;
-        canvas.height = height;
-      }
       renderer.render(uniforms, width, height, 0, 0, ready);
-      animationFrame = requestAnimationFrame(frame);
-    };
-    animationFrame = requestAnimationFrame(frame);
+    });
     return () => {
-      cancelAnimationFrame(animationFrame);
+      stopRendering();
       renderer.dispose();
     };
   }, []);

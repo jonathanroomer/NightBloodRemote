@@ -90,12 +90,27 @@ enum CodexRemoteDeviceKeyError: LocalizedError, Sendable {
 actor CodexRemoteDeviceIdentityStore {
     static let shared = CodexRemoteDeviceIdentityStore()
 
+    enum AccessPolicy: Sendable {
+        /// Ordinary iPhone control: one Face ID result authorises the current
+        /// foreground process session, and every signature reuses that bounded
+        /// non-interactive LAContext.
+        case foregroundBiometry
+
+        /// CarPlay cold start: the non-exportable key remains in Secure
+        /// Enclave, but is usable after the owner has unlocked the iPhone once
+        /// since boot. CarPlay cannot present Face ID while the phone scene is
+        /// backgrounded, so an interactive ACL can never satisfy this path.
+        case carPlayAfterFirstUnlock
+    }
+
     private enum Constants {
         static let algorithm = "ecdsa_p256_sha256"
         static let protectionClass = "hardware_secure_enclave"
         static let signingDomain = "codex-device-key-sign-payload/v1"
-        static let applicationTagPrefix =
+        static let foregroundApplicationTagPrefix =
             "com.example.nightblood.remote.codex-device-key."
+        static let carPlayApplicationTagPrefix =
+            "com.example.nightblood.remote.codex-carplay-device-key."
         static let maximumPayloadBytes = 1_048_576
 
         // SubjectPublicKeyInfo for id-ecPublicKey with the prime256v1 curve.
@@ -116,11 +131,17 @@ actor CodexRemoteDeviceIdentityStore {
     private var foregroundContext: LAContext?
     private var pendingSessionID: UUID?
     private var pendingContext: LAContext?
+    private let accessPolicy: AccessPolicy
+
+    init(accessPolicy: AccessPolicy = .foregroundBiometry) {
+        self.accessPolicy = accessPolicy
+    }
 
     func beginForegroundAuthentication(
         sessionID: UUID,
         reason: String
     ) async throws {
+        guard accessPolicy == .foregroundBiometry else { return }
         try requireAvailableBiometrics()
         let accessControl = try deviceKeyAccessControl()
         let context = operationAuthenticationContext(reason: reason)
@@ -181,7 +202,9 @@ actor CodexRemoteDeviceIdentityStore {
     /// Creates a permanent, non-exportable P-256 identity in Secure Enclave.
     func createIdentity() throws -> CodexRemoteDeviceIdentity {
         try requirePhysicalDevice()
-        try requireAvailableBiometrics()
+        if accessPolicy == .foregroundBiometry {
+            try requireAvailableBiometrics()
+        }
 
         let keyID = UUID().uuidString.lowercased()
         let privateKey = try createSecureEnclavePrivateKey(keyID: keyID)
@@ -301,10 +324,20 @@ actor CodexRemoteDeviceIdentityStore {
 
     private func deviceKeyAccessControl() throws -> SecAccessControl {
         var accessControlError: Unmanaged<CFError>?
+        let accessibility: CFString
+        let flags: SecAccessControlCreateFlags
+        switch accessPolicy {
+        case .foregroundBiometry:
+            accessibility = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            flags = [.privateKeyUsage, .biometryCurrentSet]
+        case .carPlayAfterFirstUnlock:
+            accessibility = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            flags = [.privateKeyUsage]
+        }
         guard let accessControl = SecAccessControlCreateWithFlags(
             kCFAllocatorDefault,
-            kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-            [.privateKeyUsage, .biometryCurrentSet],
+            accessibility,
+            flags,
             &accessControlError
         ) else {
             throw securityError(
@@ -319,11 +352,17 @@ actor CodexRemoteDeviceIdentityStore {
         keyID: String,
         authenticationReason: String
     ) throws -> SecKey {
-        let context = try foregroundAuthenticationContext(
-            reason: authenticationReason
-        )
         var query = privateKeyQuery(keyID: keyID, returnReference: true)
-        query[kSecUseAuthenticationContext as String] = context
+        if accessPolicy == .foregroundBiometry {
+            let context = try foregroundAuthenticationContext(
+                reason: authenticationReason
+            )
+            query[kSecUseAuthenticationContext as String] = context
+        } else {
+            let context = LAContext()
+            context.interactionNotAllowed = true
+            query[kSecUseAuthenticationContext as String] = context
+        }
 
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
@@ -366,7 +405,11 @@ actor CodexRemoteDeviceIdentityStore {
     }
 
     private func applicationTag(for keyID: String) -> Data {
-        Data("\(Constants.applicationTagPrefix)\(keyID)".utf8)
+        let prefix = switch accessPolicy {
+        case .foregroundBiometry: Constants.foregroundApplicationTagPrefix
+        case .carPlayAfterFirstUnlock: Constants.carPlayApplicationTagPrefix
+        }
+        return Data("\(prefix)\(keyID)".utf8)
     }
 
     private func normaliseKeyID(_ candidate: String) throws -> String {
@@ -495,6 +538,17 @@ actor CodexRemoteDeviceIdentityStore {
         SecItemDelete(
             privateKeyQuery(keyID: keyID, returnReference: false) as CFDictionary
         )
+    }
+
+    func deleteIdentity(keyID: String) throws {
+        let normalisedKeyID = try normaliseKeyID(keyID)
+        let status = deleteWithoutAuthentication(keyID: normalisedKeyID)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw CodexRemoteDeviceKeyError.cleanupFailed(
+                keyID: normalisedKeyID,
+                detail: securityDetail(status: status)
+            )
+        }
     }
 
     private func mappedSignatureError(

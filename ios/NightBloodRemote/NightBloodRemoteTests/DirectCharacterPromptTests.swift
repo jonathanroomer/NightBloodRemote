@@ -18,6 +18,32 @@ final class DirectCharacterPromptTests: XCTestCase {
         XCTAssertTrue(marshmallow.text.hasPrefix("# Role\n\nThe user calls you Marshmallow."))
     }
 
+    func testBundledCharacterSelectsReplyStyleIndependentlyOfVoice() throws {
+        for character in DirectFaceSkin.allCases {
+            let prompt = try DirectCharacterPromptStore.load(for: character)
+            for voice in [CodexRemoteVoiceName.sol, .ember] {
+                let parameters = codexRemoteRealtimeStartParameters(
+                    threadID: "thread-123",
+                    sdpOffer: "v=0\r\n",
+                    voice: voice,
+                    prompt: prompt,
+                    realtimeSessionID: UUID()
+                )
+                let object = try XCTUnwrap(parameters.objectValue)
+                XCTAssertEqual(object["prompt"], .string(prompt.text))
+                let instructions = try XCTUnwrap(
+                    object["realtimeStartInstructions"]?.stringValue
+                )
+                XCTAssertTrue(instructions.hasPrefix(codexRemoteRealtimeExecutionInstructions))
+                if character == .nightblood {
+                    XCTAssertTrue(instructions.contains(codexRemoteNightbloodReplyInstructions))
+                } else {
+                    XCTAssertEqual(instructions, codexRemoteRealtimeExecutionInstructions)
+                }
+            }
+        }
+    }
+
     func testPromptValidationRejectsEmptyAndOversizedValues() {
         XCTAssertThrowsError(try CodexRemoteVoicePrompt(validating: "  \n"))
         XCTAssertThrowsError(
@@ -48,6 +74,26 @@ final class DirectCharacterPromptTests: XCTestCase {
         XCTAssertEqual(object["threadId"], .string("thread-123"))
         XCTAssertEqual(object["version"], .string("v3"))
         XCTAssertEqual(object["includeStartupContext"], .bool(false))
+        XCTAssertEqual(
+            object["flushTranscriptTailOnSessionEnd"],
+            .bool(false)
+        )
+        XCTAssertNil(object["delegationAckFiller"])
+        XCTAssertNil(object["clientManagedHandoffs"])
+        XCTAssertEqual(
+            object["realtimeStartInstructions"],
+            .string(codexRemoteRealtimeExecutionInstructions)
+        )
+        XCTAssertTrue(
+            codexRemoteRealtimeExecutionInstructions.contains(
+                "clientThreadId means the task was created successfully"
+            )
+        )
+        XCTAssertTrue(
+            codexRemoteRealtimeExecutionInstructions.contains(
+                "Never retry a mutation"
+            )
+        )
         XCTAssertEqual(object["initialItems"], .array([]))
         XCTAssertEqual(
             object["transport"],

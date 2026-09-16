@@ -53,6 +53,7 @@ final class FrontCameraGazeTracker: NSObject, @preconcurrency ARSessionDelegate 
     }
 
     func start() {
+        guard !requested else { return }
         requested = true
         guard ARFaceTrackingConfiguration.isSupported else {
             publish(.absent)
@@ -94,17 +95,21 @@ final class FrontCameraGazeTracker: NSObject, @preconcurrency ARSessionDelegate 
 
     func sessionInterruptionEnded(_ session: ARSession) {
         if requested {
+            requested = false
             start()
         }
     }
 
     func session(_ session: ARSession, didFailWithError error: any Error) {
+        requested = false
+        staleTimer?.invalidate()
+        staleTimer = nil
         publish(.absent)
     }
 
     private func consume(_ anchors: [ARAnchor]) {
         guard requested,
-              let face = anchors.compactMap({ $0 as? ARFaceAnchor }).first,
+              let face = anchors.first(where: { $0 is ARFaceAnchor }) as? ARFaceAnchor,
               face.isTracked else {
             return
         }

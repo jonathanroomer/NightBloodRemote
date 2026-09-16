@@ -46,7 +46,8 @@ struct DirectCompanionView: View {
                             DirectConversationPanel(
                                 voice: voice,
                                 faceSpace: compactFaceHeight,
-                                viewportHeight: height
+                                viewportHeight: height,
+                                isVisible: progress > 0.5 && !showingSettings && accessGate.isUnlocked
                             )
                             .frame(height: height)
                             .id(DirectCompanionPage.conversation)
@@ -61,7 +62,10 @@ struct DirectCompanionView: View {
                     }
                     .allowsHitTesting(accessGate.isUnlocked)
 
-                    DirectFaceWebView(model: voice)
+                    DirectFaceWebView(
+                        model: voice,
+                        isVisible: accessGate.isUnlocked && !showingSettings
+                    )
                         .frame(width: faceSize, height: faceSize)
                         .scaleEffect(
                             interpolate(from: 1, to: 0.86, progress: progress)
@@ -163,6 +167,8 @@ struct DirectCompanionView: View {
         .foregroundStyle(.white)
         .accessibilityLabel(controlLabel)
         .accessibilityIdentifier("voice-control")
+        .disabled(!voice.hasOwnedVoice && !voice.state.isActive
+            && !voice.canStartVoice && !voice.canRetryVoiceConnection)
         .position(
             x: interpolate(
                 from: sessionControlsVisible ? width / 2 - 72 : width / 2,
@@ -314,6 +320,7 @@ struct DirectCompanionView: View {
 
     private var controlIcon: String {
         if voice.hasOwnedVoice || voice.state.isActive { return "stop.fill" }
+        if voice.canRetryVoiceConnection { return "arrow.clockwise" }
         if accessGate.state == .unlocking { return "faceid" }
         return setup.phase == .ready ? "waveform" : "lock.fill"
     }
@@ -322,6 +329,7 @@ struct DirectCompanionView: View {
         if voice.hasOwnedVoice || voice.state.isActive {
             return "End conversation"
         }
+        if voice.canRetryVoiceConnection { return "Reconnect to Codex" }
         return setup.phase == .ready
             ? "Start private Codex Voice conversation"
             : "Finish secure Codex Remote setup"
@@ -397,6 +405,12 @@ private struct DirectConversationPanel: View {
     let voice: DirectVoiceSessionModel
     let faceSpace: CGFloat
     let viewportHeight: CGFloat
+    let isVisible: Bool
+    @State private var displayedTranscript: [DirectTranscriptItem] = []
+    @State private var presentationTask: Task<Void, Never>?
+    @State private var followingLatest = true
+    @State private var nearBottom = true
+    @State private var readerIsScrolling = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -414,14 +428,14 @@ private struct DirectConversationPanel: View {
                                 .font(.caption)
                                 .foregroundStyle(.white.opacity(0.36))
                         }
-                        if voice.transcript.isEmpty {
+                        if displayedTranscript.isEmpty {
                             Text("What you and \(voice.displayAgentName) say will appear here.")
                                 .font(.system(size: 19, design: .rounded))
                                 .foregroundStyle(.white.opacity(0.34))
                                 .padding(.top, 14)
                         } else {
                             LazyVStack(spacing: 20) {
-                                ForEach(voice.transcript) { item in
+                                ForEach(displayedTranscript) { item in
                                     DirectConversationMessage(
                                         item: item,
                                         agentName: voice.displayAgentName
@@ -443,13 +457,32 @@ private struct DirectConversationPanel: View {
                     .padding(.top, 24)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .onAppear {
-                    proxy.scrollTo(transcriptBottomID, anchor: .bottom)
+                .onScrollGeometryChange(for: Bool.self) { geometry in
+                    let visibleBottom = geometry.contentOffset.y + geometry.containerSize.height
+                    return geometry.contentSize.height + geometry.contentInsets.bottom - visibleBottom < 130
+                } action: { _, atBottom in
+                    nearBottom = atBottom
+                    if readerIsScrolling { followingLatest = atBottom }
                 }
-                .onChange(of: voice.transcript) {
-                    withAnimation(.easeOut(duration: 0.18)) {
-                        proxy.scrollTo(transcriptBottomID, anchor: .bottom)
-                    }
+                .onScrollPhaseChange { _, phase in
+                    readerIsScrolling = phase != .idle
+                    if phase == .idle { followingLatest = nearBottom }
+                }
+                .onAppear { schedulePresentation(proxy, immediate: true) }
+                .onDisappear {
+                    presentationTask?.cancel()
+                    presentationTask = nil
+                }
+                .onChange(of: isVisible) {
+                    presentationTask?.cancel()
+                    presentationTask = nil
+                    if isVisible { schedulePresentation(proxy, immediate: true) }
+                }
+                .onChange(of: voice.transcriptRevision) {
+                    schedulePresentation(proxy, immediate: false)
+                }
+                .onChange(of: voice.transcriptCompletionRevision) {
+                    schedulePresentation(proxy, immediate: true)
                 }
                 .background(
                     LinearGradient(
@@ -462,6 +495,37 @@ private struct DirectConversationPanel: View {
         }
         .frame(height: viewportHeight)
     }
+    private func schedulePresentation(_ proxy: ScrollViewProxy, immediate: Bool) {
+        guard isVisible else { return }
+        if immediate {
+            presentationTask?.cancel()
+            presentationTask = nil
+            displayedTranscript = voice.transcript
+        } else if presentationTask != nil {
+            return
+        }
+        presentationTask = Task { @MainActor in
+            if !immediate {
+                do { try await Task.sleep(for: .milliseconds(80)) }
+                catch { return }
+            }
+            guard !Task.isCancelled, isVisible else { return }
+            displayedTranscript = voice.transcript
+            // Allow the new final/partial rows to enter layout before moving
+            // the anchor. Streaming never restarts an animated scroll.
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            if followingLatest && !readerIsScrolling {
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    proxy.scrollTo(transcriptBottomID, anchor: .bottom)
+                }
+            }
+            presentationTask = nil
+        }
+    }
+
 }
 
 private struct DirectConversationMessage: View {

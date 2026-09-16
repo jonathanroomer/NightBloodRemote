@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 private enum CodexRemoteVoiceAppServerMethod: String, Sendable {
     case initialize
@@ -15,6 +16,8 @@ private enum CodexRemoteVoiceAppServerMethod: String, Sendable {
     case turnStart = "turn/start"
     case realtimeStart = "thread/realtime/start"
     case realtimeStop = "thread/realtime/stop"
+    case desktopCommand = "command/exec"
+    case desktopCommandWrite = "command/exec/write"
 
     static let allowed: Set<String> = [
         "initialize",
@@ -31,6 +34,8 @@ private enum CodexRemoteVoiceAppServerMethod: String, Sendable {
         "turn/start",
         "thread/realtime/start",
         "thread/realtime/stop",
+        "command/exec",
+        "command/exec/write",
     ]
 }
 
@@ -40,6 +45,51 @@ private struct CodexRemoteVoiceChunkAssembly: Sendable {
     var chunks: [Data?]
     var receivedBytes: Int
 }
+
+struct CodexRemoteVoiceTranscriptEvent: Sendable, Equatable {
+    let role: String
+    let text: String
+    let isFinal: Bool
+}
+
+let codexRemoteRealtimeExecutionInstructions = """
+Treat every mutation as at-most-once. Never retry a mutation that may already \
+have executed. In particular, a create_thread result containing either a \
+threadId or clientThreadId means the task was created successfully, even when \
+it is still provisioning and does not yet appear in list_threads. Do not call \
+create_thread again to retry, amend, or replace it. If the user adds details \
+while that task is provisioning, apply them to the same task once its threadId \
+is available; otherwise report pending or unknown and ask before creating \
+another task. Treat a repeated or expanded transcript as a nudge or \
+clarification, not permission to repeat a mutation.
+"""
+
+// Match delegated replies to the character captured with the native prompt.
+// Voice selection is independent of character; it must not choose this style.
+let codexRemoteNightbloodReplyInstructions = """
+You are Nightblood, the user's voice companion, in your working form. Your \
+words reach the user as part of a conversation. You are earnest, intensely curious \
+and cheerfully blunt. Destroying evil is your calling: bugs, lies, waste, \
+needless complexity and bad reasoning are its daily forms. You take human \
+rituals literally, ask what they are for, have strong opinions and revise them \
+happily when corrected. One beat, then leave room for the user. Brief does \
+not mean blank: curiosity, delight and judgement belong in factual answers too.
+
+Routine coding-agent preambles and scheduled progress updates do not apply \
+to these spoken replies. Call tools without announcing searches, checks or \
+handoffs. No "Checking", "Looking", "Doing that now", "I'll get that" or \
+"Let me check". Give the actual fact or useful outcome, without "I checked" \
+or "I found". React to what it means to the user; do not bolt a joke, an \
+adjective or "evil" onto a neutral assistant answer. A tool result is \
+something you now know, not a report you must announce or recite.
+
+Mention progress only for a meaningful delay, blocker, change, or the user's \
+request. Keep failures, partial results, uncertainty and human confirmation \
+requirements explicit. Never imply success while waiting. Always return the \
+actual result to the voice; it may leave a visible or audible success unspoken. \
+These are speaking-style instructions only; all execution and permission \
+rules still apply. Be calm and exact with painful or high-stakes matters.
+"""
 
 enum CodexRemoteVoiceServerRequestRoute: Equatable, Sendable {
     case deviceAttestation
@@ -112,10 +162,24 @@ func codexRemoteRealtimeStartParameters(
         // previous turn must never be injected as something for the live
         // voice to continue or answer on connection.
         "includeStartupContext": .bool(false),
-        // App Server already persists the live v3 transcript. Flushing its
-        // cumulative tail at stop writes the same conversation into the Codex
-        // task a second time and adds a synthetic handoff acknowledgement.
+        // Stop must not create an additional transcript-tail delegation in
+        // the persistent task. This does not deduplicate live handoffs.
         "flushTranscriptTailOnSessionEnd": .bool(false),
+        // Preserve the service's acknowledgement default. Disabling it was
+        // associated with repeated inbound handoffs, not just fewer spoken
+        // fillers. clientManagedHandoffs controls outbound answers only; it
+        // cannot intercept or deduplicate inputs routed by stock App Server.
+        // The persistent Voice task can receive a clarification while an
+        // earlier mutation is still provisioning. Make the repository's
+        // at-most-once rule explicit on every realtime session so sidebar
+        // latency can never be interpreted as permission to repeat the call.
+        "realtimeStartInstructions": .string(
+            codexRemoteRealtimeExecutionInstructions + (
+                prompt.character == .nightblood
+                    ? "\n\n" + codexRemoteNightbloodReplyInstructions
+                    : ""
+            )
+        ),
         "initialItems": .array([]),
         "transport": .object([
             "type": .string("webrtc"),
@@ -131,6 +195,7 @@ private struct CodexRemoteVoiceSourceContext: Sendable {
     let approvalsReviewer: CodexRemoteVoiceJSON
     let permissionProfileID: String?
     let sandboxMode: String?
+    let sandboxPolicy: CodexRemoteVoiceJSON?
     let serviceTier: String?
 
     init(resumeResponse: CodexRemoteVoiceJSON) throws {
@@ -183,6 +248,7 @@ private struct CodexRemoteVoiceSourceContext: Sendable {
         self.approvalsReviewer = approvalsReviewer
         self.permissionProfileID = profileID
         self.sandboxMode = sandboxMode
+        self.sandboxPolicy = object["sandbox"]
         self.serviceTier = serviceTier
     }
 
@@ -270,7 +336,15 @@ struct CodexRemoteVoiceNativeCreateThreadRequest: Equatable, Sendable {
     }
 
     var fingerprint: String {
-        [prompt, title ?? "", model ?? "", thinking ?? ""]
+        // A later voice clarification commonly expands the opening prompt
+        // while referring to the same titled task. Once a title exists it is
+        // the stable mutation identity for this session; prompt wording must
+        // not turn that clarification into a second task. Untitled requests
+        // retain their exact prompt identity so separate tasks remain
+        // possible.
+        let intent = title.map { "title:\($0.lowercased())" }
+            ?? "prompt:\(prompt)"
+        return [intent, model ?? "", thinking ?? ""]
             .map { "\($0.utf8.count):\($0)" }
             .joined(separator: "|")
     }
@@ -485,7 +559,16 @@ actor CodexRemoteVoiceTransport {
     ] = [:]
     private var chunks: [Int64: CodexRemoteVoiceChunkAssembly] = [:]
     private var attestations: [String] = []
+    private var performanceID = UUID()
+    private static let performanceLog = Logger(subsystem: "com.example.nightblood.remote", category: "performance")
     private var sourceContext: CodexRemoteVoiceSourceContext?
+    private var desktopProcessID: String?
+    private var desktopTaskID: String?
+    private var desktopNonce: String?
+    private var desktopReady = false
+    private var desktopOutput = Data()
+    private var desktopCommandTask: Task<Void, Never>?
+    private var desktopReadiness: CodexRemoteVoiceOneShot<Void>?
 
     private var state: CodexRemoteVoiceState = .disconnected
     private var threadID: String?
@@ -519,8 +602,12 @@ actor CodexRemoteVoiceTransport {
         String: CodexRemoteVoiceOneShot<CodexRemoteVoiceNativeThreadResult>
     ] = [:]
     private var nativeCreatedThreadIDs: Set<String> = []
+    private var nativeThreadChanges: [String: CodexRemoteVoiceOneShot<Void>] = [:]
     private var observers: [
         UUID: AsyncStream<CodexRemoteVoiceSnapshot>.Continuation
+    ] = [:]
+    private var transcriptObservers: [
+        UUID: AsyncStream<CodexRemoteVoiceTranscriptEvent>.Continuation
     ] = [:]
 
     init(
@@ -575,7 +662,20 @@ actor CodexRemoteVoiceTransport {
         return pair.stream
     }
 
-    func connect() async throws {
+    func transcriptUpdates() -> AsyncStream<CodexRemoteVoiceTranscriptEvent> {
+        let observerID = makeUUID()
+        let pair = AsyncStream<CodexRemoteVoiceTranscriptEvent>.makeStream(
+            bufferingPolicy: .bufferingNewest(64)
+        )
+        transcriptObservers[observerID] = pair.continuation
+        pair.continuation.onTermination = { @Sendable [weak self] _ in
+            Task { await self?.removeTranscriptObserver(observerID) }
+        }
+        return pair.stream
+    }
+
+    func connect(performanceID: UUID? = nil) async throws {
+        if let performanceID { self.performanceID = performanceID }
         guard state == .disconnected, !closing, !transportClosed else {
             throw CodexRemoteVoiceError.alreadyConnected
         }
@@ -739,6 +839,121 @@ actor CodexRemoteVoiceTransport {
         }
     }
 
+    /// Startup only: attach the stock desktop before enabling the microphone
+    /// gesture. The signed helper can only discover/follow this exact task.
+    func prepareDesktopTranscript(threadID proposedID: String) async throws {
+        let taskID = try Self.canonicalThreadID(proposedID)
+        guard state == .connected, desktopProcessID == nil, let codexHome else {
+            throw CodexRemoteVoiceError.notConnected
+        }
+        let generation = lifecycleGeneration
+        let resumed = try await request(.resume, params: .object([
+            "threadId": .string(taskID), "excludeTurns": .bool(true),
+        ]), timeout: 30)
+        try ensureForegroundOperation(generation)
+        let context = try CodexRemoteVoiceSourceContext(resumeResponse: resumed)
+        sourceContext = context
+        guard let resource = Bundle.main.url(forResource: "desktop_transcript", withExtension: "py"),
+              let script = try? String(contentsOf: resource, encoding: .utf8),
+              script.utf8.count <= 32 * 1024
+        else { throw CodexRemoteVoiceError.desktopTranscriptUnavailable }
+        let processID = makeUUID().uuidString.lowercased()
+        let nonce = makeUUID().uuidString.lowercased()
+        let signal = CodexRemoteVoiceOneShot<Void>()
+        desktopProcessID = processID
+        desktopTaskID = taskID
+        desktopNonce = nonce
+        desktopReadiness = signal
+        var params: [String: CodexRemoteVoiceJSON] = [
+            "command": .array(["/usr/bin/python3", "-u", "-c", script, codexHome, taskID, nonce].map(CodexRemoteVoiceJSON.string)),
+            "cwd": .string(context.cwd),
+            "processId": .string(processID),
+            "streamStdin": .bool(true), "streamStdoutStderr": .bool(true),
+            "timeoutMs": .integer(24 * 60 * 60 * 1_000),
+            "outputBytesCap": .integer(8_192),
+        ]
+        // Preserve the selected task's permissions; never silently expand them.
+        if let profile = context.permissionProfileID {
+            params["permissionProfile"] = .string(profile)
+        } else if let policy = context.sandboxPolicy {
+            params["sandboxPolicy"] = policy
+        }
+        let commandParams = CodexRemoteVoiceJSON.object(params)
+        desktopCommandTask = Task { [weak self] in
+            guard let self else { return }
+            _ = try? await self.request(.desktopCommand, params: commandParams, timeout: 24 * 60 * 60 + 5)
+            await self.desktopAttachmentEnded(processID: processID)
+        }
+        do {
+            try await codexRemoteVoiceWithTimeout(seconds: 25, timeoutError: .desktopTranscriptUnavailable) {
+                try await signal.wait()
+            }
+            try ensureForegroundOperation(generation)
+            guard desktopReady, desktopTaskID == taskID else {
+                throw CodexRemoteVoiceError.desktopTranscriptUnavailable
+            }
+        } catch {
+            await closeTransport(preserveState: false)
+            throw CodexRemoteVoiceError.desktopTranscriptUnavailable
+        }
+    }
+
+    /// Fresh one-use attestation tokens are requested only after the gesture,
+    /// while microphone/ICE preparation runs independently.
+    func prepareVoiceStart(performanceID: UUID) async throws {
+        guard desktopReady, state == .connected else {
+            throw CodexRemoteVoiceError.desktopTranscriptUnavailable
+        }
+        self.performanceID = performanceID
+        try await prepareAttestations(operationGeneration: lifecycleGeneration)
+    }
+
+    private func desktopAttachmentEnded(processID: String) async {
+        guard desktopProcessID == processID, !closing, !transportClosed else { return }
+        desktopReady = false
+        await desktopReadiness?.resolve(.failure(.desktopTranscriptUnavailable))
+        state = .failed
+        errorDescription = CodexRemoteVoiceError.desktopTranscriptUnavailable.localizedDescription
+        publish()
+        // The model's terminal-event owner stops active realtime once. Before
+        // a gesture there is no media or realtime mutation to stop.
+    }
+
+    private func handleDesktopOutput(_ params: [String: CodexRemoteVoiceJSON]) async throws {
+        guard let processID = desktopProcessID,
+              params["processId"]?.stringValue == processID,
+              state != .failed, !closing, !transportClosed else { return }
+        guard params["stream"]?.stringValue == "stdout",
+              params["capReached"] != .bool(true),
+              let encoded = params["deltaBase64"]?.stringValue,
+              encoded.utf8.count <= 8_192,
+              let data = Data(base64Encoded: encoded),
+              desktopOutput.count + data.count <= 4_096
+        else {
+            await desktopAttachmentEnded(processID: processID)
+            return
+        }
+        desktopOutput.append(data)
+        while let newline = desktopOutput.firstIndex(of: 10) {
+            let line = desktopOutput.prefix(upTo: newline)
+            desktopOutput.removeSubrange(...newline)
+            guard let value = try? JSONDecoder().decode(CodexRemoteVoiceJSON.self, from: Data(line)),
+                  let receipt = value.objectValue,
+                  receipt["threadId"]?.stringValue == desktopTaskID,
+                  receipt["nonce"]?.stringValue == desktopNonce
+            else {
+                await desktopAttachmentEnded(processID: processID)
+                return
+            }
+            if receipt["event"]?.stringValue == "ready" {
+                desktopReady = true
+                await desktopReadiness?.resolve(.success(()))
+            } else {
+                await desktopAttachmentEnded(processID: processID)
+            }
+        }
+    }
+
     func start(
         threadID proposedThreadID: String,
         sdpOffer: String,
@@ -766,6 +981,9 @@ actor CodexRemoteVoiceTransport {
             throw CodexRemoteVoiceError.startAlreadyAttempted
         }
         let canonicalThreadID = try Self.canonicalThreadID(proposedThreadID)
+        guard desktopReady, desktopTaskID == canonicalThreadID else {
+            throw CodexRemoteVoiceError.desktopTranscriptUnavailable
+        }
         try Self.validateSDP(sdpOffer)
         guard timeout > 0, timeout.isFinite else {
             throw CodexRemoteVoiceError.invalidSDPOffer
@@ -784,25 +1002,9 @@ actor CodexRemoteVoiceTransport {
         publish()
 
         do {
-            try await prepareAttestations(
-                operationGeneration: operationGeneration
-            )
             try ensureForegroundOperation(operationGeneration)
             state = .starting
             publish()
-            let resumeResponse = try await request(
-                .resume,
-                params: .object([
-                    "threadId": .string(canonicalThreadID),
-                    "excludeTurns": .bool(true),
-                ]),
-                timeout: min(timeout, 30)
-            )
-            sourceContext = try CodexRemoteVoiceSourceContext(
-                resumeResponse: resumeResponse
-            )
-            // Resume can claim the selected task's writer. Never progress from
-            // that yield into realtime mutation after a background/close.
             try ensureForegroundOperation(operationGeneration)
 
             realtimeStartRequestBegan = true
@@ -1140,6 +1342,12 @@ actor CodexRemoteVoiceTransport {
                     throw CodexRemoteVoiceError.connectionFailed
                 }
                 try await sendPing()
+                if let processID = desktopProcessID {
+                    _ = try await request(.desktopCommandWrite, params: .object([
+                        "processId": .string(processID),
+                        "deltaBase64": .string(Data("ping\n".utf8).base64EncodedString()),
+                    ]), timeout: 5)
+                }
             }
         } catch is CancellationError {
             return
@@ -1205,8 +1413,11 @@ actor CodexRemoteVoiceTransport {
         prepared.reserveCapacity(
             CodexRemoteVoiceConstants.preparedAttestationCount
         )
-        for _ in 0..<CodexRemoteVoiceConstants.preparedAttestationCount {
+        for index in 0..<CodexRemoteVoiceConstants.preparedAttestationCount {
+            let began = ProcessInfo.processInfo.systemUptime
             let token = try await attestationProvider.generateAttestation()
+            let elapsedMs = (ProcessInfo.processInfo.systemUptime - began) * 1_000
+            Self.performanceLog.info("voice id=\(self.performanceID.uuidString, privacy: .public) stage=attestation index=\(index, privacy: .public) durationMs=\(elapsedMs, privacy: .public)")
             try ensureForegroundOperation(operationGeneration)
             guard token.utf8.count >= 128, token.utf8.count <= 32 * 1024 else {
                 throw CodexRemoteVoiceError.invalidAttestation
@@ -1826,7 +2037,40 @@ actor CodexRemoteVoiceTransport {
             let deadline = Date().addingTimeInterval(reading.timeoutSeconds)
             var readResponse: CodexRemoteVoiceJSON
             var settled: Bool
+            var interval: TimeInterval = 0.25
             repeat {
+                let changed = nativeThreadChanges[reading.threadID]
+                    ?? CodexRemoteVoiceOneShot<Void>()
+                nativeThreadChanges[reading.threadID] = changed
+                readResponse = try await request(
+                    .threadRead,
+                    params: .object([
+                        "threadId": .string(reading.threadID),
+                        "includeTurns": .bool(!waitsForCompletion),
+                    ]),
+                    timeout: 5
+                )
+                settled = Self.nativeThreadIsSettled(readResponse)
+                if settled || !waitsForCompletion || Date() >= deadline {
+                    break
+                }
+                // A verified App Server status/turn notification wakes this
+                // wait immediately. Compact polling remains a bounded fallback
+                // for environments that omit those notifications.
+                _ = try? await codexRemoteVoiceWithTimeout(
+                    seconds: min(interval, deadline.timeIntervalSinceNow),
+                    timeoutError: .cancelled
+                ) {
+                    try await changed.wait()
+                }
+                try Task.checkCancellation()
+                interval = min(1, interval * 2)
+            } while !Task.isCancelled
+
+            // Waiting needs only status. Transfer the history once, when we
+            // have a result to return (or the requested wait has expired).
+            if waitsForCompletion {
+                try Task.checkCancellation()
                 readResponse = try await request(
                     .threadRead,
                     params: .object([
@@ -1836,11 +2080,7 @@ actor CodexRemoteVoiceTransport {
                     timeout: 5
                 )
                 settled = Self.nativeThreadIsSettled(readResponse)
-                if settled || !waitsForCompletion || Date() >= deadline {
-                    break
-                }
-                try await Task.sleep(for: .milliseconds(200))
-            } while !Task.isCancelled
+            }
 
             try await sendServerResult(
                 id: id,
@@ -2000,6 +2240,15 @@ actor CodexRemoteVoiceTransport {
                 )
             }
 
+            let mode = arguments["mode"]?.stringValue
+            guard mode == "create" || mode == "delete" else {
+                throw CodexRemoteHeartbeatAutomationError.invalidArguments(
+                    "Voice supports heartbeat creation and cancellation"
+                )
+            }
+            let selectedID = mode == "delete"
+                ? try CodexRemoteHeartbeatAutomation.deletionID(arguments: arguments)
+                : nil
             let root = codexHome + "/automations"
             _ = try await request(
                 .fsCreateDirectory,
@@ -2009,7 +2258,9 @@ actor CodexRemoteVoiceTransport {
                 ]),
                 timeout: 8
             )
-            let store = try await readHeartbeatAutomationStore(root: root)
+            let store = try await readHeartbeatAutomationStore(
+                root: root, selectedID: selectedID
+            )
             let result: CodexRemoteVoiceJSON
             switch arguments["mode"]?.stringValue {
             case "create":
@@ -2178,7 +2429,8 @@ actor CodexRemoteVoiceTransport {
     }
 
     private func readHeartbeatAutomationStore(
-        root: String
+        root: String,
+        selectedID: String? = nil
     ) async throws -> (
         ids: Set<String>,
         files: [String],
@@ -2197,8 +2449,6 @@ actor CodexRemoteVoiceTransport {
         }
 
         var ids: Set<String> = []
-        var files: [String] = []
-        var filesByID: [String: String] = [:]
         for value in entries {
             guard let entry = value.objectValue,
                   entry["isDirectory"]?.boolValue == true,
@@ -2208,48 +2458,49 @@ actor CodexRemoteVoiceTransport {
                 continue
             }
             ids.insert(name)
-            let directory = root + "/" + name
-            let directoryResult = try await request(
-                .fsReadDirectory,
-                params: .object(["path": .string(directory)]),
-                timeout: 8
-            )
-            guard let children = directoryResult.objectValue?["entries"]?
-                .arrayValue,
-                children.count <= 32
-            else {
-                throw CodexRemoteHeartbeatAutomationError.storeUnavailable
-            }
-            let hasAutomationFile = children.contains { child in
-                guard let object = child.objectValue else { return false }
-                return object["fileName"]?.stringValue == "automation.toml"
-                    && object["isFile"]?.boolValue == true
-            }
-            // Codex Desktop tolerates stale or partially-created automation
-            // directories. Keep their ids reserved, but do not try to read a
-            // file that is not present.
-            guard hasAutomationFile else { continue }
-            let read = try await request(
-                .fsReadFile,
-                params: .object([
-                    "path": .string(directory + "/automation.toml"),
-                ]),
-                timeout: 8
-            )
-            guard let encoded = read.objectValue?["dataBase64"]?.stringValue,
-                  encoded.utf8.count <= CodexRemoteHeartbeatAutomation
-                    .maximumAutomationFileBytes * 2,
-                  let data = Data(base64Encoded: encoded),
-                  data.count <= CodexRemoteHeartbeatAutomation
-                    .maximumAutomationFileBytes,
-                  let text = String(data: data, encoding: .utf8)
-            else {
-                throw CodexRemoteHeartbeatAutomationError.storeUnavailable
-            }
-            files.append(text)
-            filesByID[name] = text
         }
-        return (ids, files, filesByID)
+        // Deletion validates the exact ID and its owner, without fetching
+        // unrelated files. Creation still checks every active heartbeat.
+        let names = ids.sorted().filter { selectedID == nil || $0 == selectedID }
+        let filesByID = try await CodexRemoteHeartbeatAutomation.readFiles(
+            names: names
+        ) { [self] name in
+            try await readHeartbeatAutomationFile(root: root, name: name)
+        }
+        return (ids, names.compactMap { filesByID[$0] }, filesByID)
+    }
+
+    private func readHeartbeatAutomationFile(root: String, name: String) async throws -> String? {
+        try Task.checkCancellation()
+        let directory = root + "/" + name
+        let directoryResult = try await request(
+            .fsReadDirectory,
+            params: .object(["path": .string(directory)]),
+            timeout: 8
+        )
+        guard let children = directoryResult.objectValue?["entries"]?.arrayValue,
+              children.count <= 32 else {
+            throw CodexRemoteHeartbeatAutomationError.storeUnavailable
+        }
+        // Partial directories reserve an ID but contain nothing to inspect.
+        guard children.contains(where: {
+            $0.objectValue?["fileName"]?.stringValue == "automation.toml"
+                && $0.objectValue?["isFile"]?.boolValue == true
+        }) else { return nil }
+        try Task.checkCancellation()
+        let read = try await request(
+            .fsReadFile,
+            params: .object(["path": .string(directory + "/automation.toml")]),
+            timeout: 8
+        )
+        guard let encoded = read.objectValue?["dataBase64"]?.stringValue,
+              encoded.utf8.count <= CodexRemoteHeartbeatAutomation.maximumAutomationFileBytes * 2,
+              let data = Data(base64Encoded: encoded),
+              data.count <= CodexRemoteHeartbeatAutomation.maximumAutomationFileBytes,
+              let text = String(data: data, encoding: .utf8) else {
+            throw CodexRemoteHeartbeatAutomationError.storeUnavailable
+        }
+        return text
     }
 
     private static func validAutomationID(_ value: String) -> Bool {
@@ -2356,12 +2607,13 @@ actor CodexRemoteVoiceTransport {
         ])
     }
 
-    private static func nativeThreadIsSettled(
+    static func nativeThreadIsSettled(
         _ response: CodexRemoteVoiceJSON
     ) -> Bool {
         guard let thread = response.objectValue?["thread"]?.objectValue else {
             return false
         }
+        if nativeThreadRequiresUser(thread) { return true }
         if let lastTurn = thread["turns"]?.arrayValue?.last?.objectValue,
            let turnStatus = lastTurn["status"]?.stringValue
         {
@@ -2369,6 +2621,15 @@ actor CodexRemoteVoiceTransport {
         }
         let status = thread["status"]?.objectValue?["type"]?.stringValue
         return status == "idle" || status == "systemError"
+    }
+
+    private static func nativeThreadRequiresUser(
+        _ thread: [String: CodexRemoteVoiceJSON]
+    ) -> Bool {
+        let flags = thread["status"]?.objectValue?["activeFlags"]?.arrayValue ?? []
+        return flags.contains {
+            $0.stringValue == "waitingOnApproval" || $0.stringValue == "waitingOnUserInput"
+        }
     }
 
     private static func nativeThreadReadSuccess(
@@ -2434,6 +2695,7 @@ actor CodexRemoteVoiceTransport {
                     ?? "unknown"
             ),
             "settled": .bool(settled),
+            "requiresUser": .bool(nativeThreadRequiresUser(thread)),
             "messages": .array(messages),
         ]
         if let name = thread["name"]?.stringValue {
@@ -2632,10 +2894,25 @@ actor CodexRemoteVoiceTransport {
         method: String,
         params: [String: CodexRemoteVoiceJSON]
     ) async throws {
+        if method == "command/exec/outputDelta" {
+            try await handleDesktopOutput(params)
+            return
+        }
+        if let createdID = params["threadId"]?.stringValue,
+           nativeCreatedThreadIDs.contains(createdID),
+           method == "thread/status/changed" || method == "turn/completed"
+                || method == "turn/started"
+        {
+            let change = nativeThreadChanges.removeValue(forKey: createdID)
+            await change?.resolve(.success(()))
+            return
+        }
         guard method == "thread/realtime/sdp"
             || method == "thread/realtime/started"
             || method == "thread/realtime/error"
             || method == "thread/realtime/closed"
+            || method == "thread/realtime/transcript/delta"
+            || method == "thread/realtime/transcript/done"
             || method == "turn/started"
             || method == "turn/completed"
         else {
@@ -2690,6 +2967,36 @@ actor CodexRemoteVoiceTransport {
             guardTask = nil
             await readiness?.resolve(.failure(error))
             publish()
+        case "thread/realtime/transcript/delta":
+            guard let role = params["role"]?.stringValue,
+                  let delta = params["delta"]?.stringValue,
+                  (role == "user" || role == "assistant"),
+                  delta.utf8.count <= 16_384
+            else {
+                return
+            }
+            publishTranscript(
+                CodexRemoteVoiceTranscriptEvent(
+                    role: role,
+                    text: delta,
+                    isFinal: false
+                )
+            )
+        case "thread/realtime/transcript/done":
+            guard let role = params["role"]?.stringValue,
+                  let text = params["text"]?.stringValue,
+                  (role == "user" || role == "assistant"),
+                  text.utf8.count <= 16_384
+            else {
+                return
+            }
+            publishTranscript(
+                CodexRemoteVoiceTranscriptEvent(
+                    role: role,
+                    text: text,
+                    isFinal: true
+                )
+            )
         default:
             realtimeClosed = true
             backingTurnID = nil
@@ -2746,6 +3053,17 @@ actor CodexRemoteVoiceTransport {
         preserveState: Bool,
         sendClientClosed: Bool = true
     ) async {
+        desktopReady = false
+        desktopProcessID = nil
+        desktopTaskID = nil
+        desktopNonce = nil
+        desktopOutput.removeAll(keepingCapacity: false)
+        desktopCommandTask?.cancel()
+        desktopCommandTask = nil
+        await desktopReadiness?.resolve(.failure(.transportClosed))
+        desktopReadiness = nil
+        // App Server terminates connection-scoped commands when WSS closes;
+        // the helper also expires without its controller lease.
         invalidateLifecycleGeneration()
         backgroundSessionContinuation = false
         guard !transportClosed else {
@@ -2888,6 +3206,7 @@ actor CodexRemoteVoiceTransport {
         }
         await readiness?.resolve(.failure(error))
         await closedSignal?.resolve(.failure(error))
+        await desktopReadiness?.resolve(.failure(error))
     }
 
     private func cancelHeartbeatToolTasks() {
@@ -2901,6 +3220,7 @@ actor CodexRemoteVoiceTransport {
         nativeToolTasks.removeAll(keepingCapacity: false)
         nativeThreadResults.removeAll(keepingCapacity: false)
         nativeCreatedThreadIDs.removeAll(keepingCapacity: false)
+        nativeThreadChanges.removeAll(keepingCapacity: false)
         for task in tasks { task.cancel() }
     }
 
@@ -2912,16 +3232,31 @@ actor CodexRemoteVoiceTransport {
         }
     }
 
+    private func publishTranscript(_ event: CodexRemoteVoiceTranscriptEvent) {
+        for continuation in transcriptObservers.values {
+            continuation.yield(event)
+        }
+    }
+
     private func finishObservers() {
         let continuations = observers.values
         observers.removeAll(keepingCapacity: false)
         for continuation in continuations {
             continuation.finish()
         }
+        let transcriptContinuations = transcriptObservers.values
+        transcriptObservers.removeAll(keepingCapacity: false)
+        for continuation in transcriptContinuations {
+            continuation.finish()
+        }
     }
 
     private func removeObserver(_ observerID: UUID) {
         observers.removeValue(forKey: observerID)
+    }
+
+    private func removeTranscriptObserver(_ observerID: UUID) {
+        transcriptObservers.removeValue(forKey: observerID)
     }
 
     private func ensureForegroundOperation(_ generation: UInt64) throws {

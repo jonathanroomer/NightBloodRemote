@@ -28,3 +28,6 @@ blender/renders/
 !.env.example
 Config/Local.xcconfig
 audit-report.txt
+
+__pycache__/
+*.pyc

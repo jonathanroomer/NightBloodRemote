@@ -145,6 +145,46 @@ final class CodexRemoteVoiceServerRequestRouteTests: XCTestCase {
         XCTAssertEqual(first.fingerprint, second.fingerprint)
     }
 
+    func testCreateThreadFingerprintDeduplicatesClarifiedTitledRequest() throws {
+        let first = try CodexRemoteVoiceNativeCreateThreadRequest(
+            params: createThreadParams(),
+            expectedThreadID: threadID,
+            taskCreationEnabled: true
+        )
+        var clarified = createThreadParams()
+        var arguments = clarified["arguments"]!.objectValue!
+        arguments["prompt"] = .string(
+            "Please investigate this, including the UK-market differences."
+        )
+        clarified["arguments"] = .object(arguments)
+        let second = try CodexRemoteVoiceNativeCreateThreadRequest(
+            params: clarified,
+            expectedThreadID: threadID,
+            taskCreationEnabled: true
+        )
+
+        XCTAssertEqual(first.fingerprint, second.fingerprint)
+    }
+
+    func testCreateThreadFingerprintKeepsSeparateTitledRequestsDistinct() throws {
+        let first = try CodexRemoteVoiceNativeCreateThreadRequest(
+            params: createThreadParams(),
+            expectedThreadID: threadID,
+            taskCreationEnabled: true
+        )
+        var separate = createThreadParams()
+        var arguments = separate["arguments"]!.objectValue!
+        arguments["title"] = .string("A different voice task")
+        separate["arguments"] = .object(arguments)
+        let second = try CodexRemoteVoiceNativeCreateThreadRequest(
+            params: separate,
+            expectedThreadID: threadID,
+            taskCreationEnabled: true
+        )
+
+        XCTAssertNotEqual(first.fingerprint, second.fingerprint)
+    }
+
     private func route(
         tool: String,
         threadID requestThreadID: String
@@ -180,5 +220,28 @@ final class CodexRemoteVoiceServerRequestRouteTests: XCTestCase {
                 ]),
             ]),
         ]
+    }
+}
+
+extension CodexRemoteVoiceServerRequestRouteTests {
+    func testCompactTaskStatusIncludesCompletionFailureAndHumanAttention() {
+        for status in ["idle", "systemError"] {
+            XCTAssertTrue(CodexRemoteVoiceTransport.nativeThreadIsSettled(.object([
+                "thread": .object(["status": .object(["type": .string(status)])]),
+            ])))
+        }
+        for flag in ["waitingOnApproval", "waitingOnUserInput"] {
+            XCTAssertTrue(CodexRemoteVoiceTransport.nativeThreadIsSettled(.object([
+                "thread": .object([
+                    "status": .object([
+                        "type": .string("active"), "activeFlags": .array([.string(flag)]),
+                    ]),
+                    "turns": .array([.object(["status": .string("inProgress")])]),
+                ]),
+            ])))
+        }
+        XCTAssertFalse(CodexRemoteVoiceTransport.nativeThreadIsSettled(.object([
+            "thread": .object(["status": .object(["type": .string("active")])]),
+        ])))
     }
 }

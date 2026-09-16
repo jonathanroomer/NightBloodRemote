@@ -376,6 +376,7 @@ final class DirectCodexRemoteSetupModel {
     @ObservationIgnored private var backgroundWatcher: Task<Void, Never>?
     @ObservationIgnored private var foregroundWatcher: Task<Void, Never>?
     @ObservationIgnored private var applicationActive: Bool
+    @ObservationIgnored private(set) var isCarPlayConnected = false
 
     @ObservationIgnored private var account: CodexRemoteAccountContext?
     @ObservationIgnored private var metadata: CodexRemoteEnrolmentMetadata?
@@ -677,6 +678,12 @@ final class DirectCodexRemoteSetupModel {
     }
 
     func applicationDidEnterBackground() {
+        // The phone scene can enter the background while the system-hosted
+        // CarPlay scene remains connected. Connection, rather than the scene's
+        // momentary activation state, is authoritative here: during a cold
+        // CarPlay launch UIKit can send the phone background notification
+        // before the CarPlay scene reports foregroundActive.
+        guard !isCarPlayConnected else { return }
         cancelActiveOperation(forBackground: true)
     }
 
@@ -686,6 +693,24 @@ final class DirectCodexRemoteSetupModel {
             phase = .checking
             errorMessage = nil
         }
+    }
+
+    func carPlayDidConnect() {
+        isCarPlayConnected = true
+        applicationDidBecomeActive()
+    }
+
+    func carPlayDidBecomeActive() {
+        guard isCarPlayConnected else { return }
+        applicationDidBecomeActive()
+    }
+
+    func carPlayDidDisconnect() {
+        isCarPlayConnected = false
+        guard !NightBloodVoiceSceneActivity.isIPhoneApplicationActive else {
+            return
+        }
+        cancelActiveOperation(forBackground: true)
     }
 
     private func startOperation(

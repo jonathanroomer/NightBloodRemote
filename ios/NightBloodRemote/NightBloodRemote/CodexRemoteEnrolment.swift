@@ -14,8 +14,6 @@ protocol CodexRemoteDeviceIdentityProviding: Sendable {
 /// Production adapter for the existing Secure Enclave actor. Tests should
 /// inject an in-memory provider and must not create a real key.
 actor CodexRemoteSecureEnclaveIdentityProvider: CodexRemoteDeviceIdentityProviding {
-    private static let applicationTagPrefix =
-        "com.example.nightblood.remote.codex-device-key."
     private let store: CodexRemoteDeviceIdentityStore
 
     init(store: CodexRemoteDeviceIdentityStore = .shared) {
@@ -41,24 +39,8 @@ actor CodexRemoteSecureEnclaveIdentityProvider: CodexRemoteDeviceIdentityProvidi
     /// This is used only for a failure that is known to have happened before
     /// enrol-finish could complete. Unknown or unvalidated finishes always
     /// preserve the key for recovery.
-    func deleteIdentity(keyID: String) throws {
-        guard let uuid = UUID(uuidString: keyID) else {
-            throw CodexRemoteEnrolmentError.invalidDeviceIdentity
-        }
-        let normalisedKeyID = uuid.uuidString.lowercased()
-        let applicationTag = Data(
-            "\(Self.applicationTagPrefix)\(normalisedKeyID)".utf8
-        )
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassKey,
-            kSecAttrApplicationTag as String: applicationTag,
-            kSecAttrKeyClass as String: kSecAttrKeyClassPrivate,
-            kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
-        ]
-        let status = SecItemDelete(query as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw CodexRemoteEnrolmentError.cleanupRequired
-        }
+    func deleteIdentity(keyID: String) async throws {
+        try await store.deleteIdentity(keyID: keyID)
     }
 }
 

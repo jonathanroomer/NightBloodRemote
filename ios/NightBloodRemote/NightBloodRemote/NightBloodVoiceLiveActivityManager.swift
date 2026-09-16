@@ -33,6 +33,8 @@ final class NightBloodVoiceLiveActivityManager:
     private typealias VoiceActivity = Activity<NightBloodVoiceActivityAttributes>
 
     private var desiredSnapshot: DirectVoiceLiveActivitySnapshot?
+    private var appliedSnapshot: DirectVoiceLiveActivitySnapshot?
+    private var appliedActivityID: String?
     private var worker: Task<Void, Never>?
 
     private init() {}
@@ -72,16 +74,23 @@ final class NightBloodVoiceLiveActivityManager:
                     dismissalPolicy: .immediate
                 )
             }
+            appliedSnapshot = nil
+            appliedActivityID = nil
             return
         }
 
         if let activity = activities.first {
-            await activity.update(
-                ActivityContent(
-                    state: snapshot.contentState,
-                    staleDate: nil
+            if appliedSnapshot != snapshot || appliedActivityID != activity.id
+                || activity.activityState != .active {
+                await activity.update(
+                    ActivityContent(
+                        state: snapshot.contentState,
+                        staleDate: nil
+                    )
                 )
-            )
+                appliedSnapshot = snapshot
+                appliedActivityID = activity.id
+            }
             for duplicate in activities.dropFirst() {
                 await duplicate.end(nil, dismissalPolicy: .immediate)
             }
@@ -90,7 +99,7 @@ final class NightBloodVoiceLiveActivityManager:
 
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         do {
-            _ = try VoiceActivity.request(
+            let activity = try VoiceActivity.request(
                 attributes: NightBloodVoiceActivityAttributes(
                     sessionID: UUID(),
                     agentName: snapshot.agentName
@@ -101,6 +110,8 @@ final class NightBloodVoiceLiveActivityManager:
                 ),
                 pushType: nil
             )
+            appliedSnapshot = snapshot
+            appliedActivityID = activity.id
         } catch {
             #if DEBUG
             print("NightBloodLiveActivity start failed: \(error.localizedDescription)")

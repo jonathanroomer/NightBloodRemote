@@ -29,13 +29,16 @@ public actor CodexPlanTokenStore {
 
     private let service: String
     private let account: String
+    private let allowsBackgroundAccess: Bool
 
     public init(
         service: String = CodexPlanTokenStore.defaultService,
-        account: String = CodexPlanTokenStore.defaultAccount
+        account: String = CodexPlanTokenStore.defaultAccount,
+        allowsBackgroundAccess: Bool = false
     ) {
         self.service = service
         self.account = account
+        self.allowsBackgroundAccess = allowsBackgroundAccess
     }
 
     public func load() throws -> CodexPlanTokens? {
@@ -59,7 +62,18 @@ public actor CodexPlanTokenStore {
         }
 
         let accessibility = result[kSecAttrAccessible as String] as? String
-        guard accessibility == (kSecAttrAccessibleWhenUnlockedThisDeviceOnly as String) else {
+        if allowsBackgroundAccess,
+           accessibility == (kSecAttrAccessibleWhenUnlockedThisDeviceOnly as String)
+        {
+            let status = SecItemUpdate(
+                baseQuery as CFDictionary,
+                [kSecAttrAccessible as String: expectedAccessibility]
+                    as CFDictionary
+            )
+            guard status == errSecSuccess else {
+                throw CodexPlanOAuthError.keychain(status: status)
+            }
+        } else if accessibility != (expectedAccessibility as String) {
             throw CodexPlanOAuthError.keychainProtectionMismatch
         }
 
@@ -88,7 +102,7 @@ public actor CodexPlanTokenStore {
 
         let attributes: [String: Any] = [
             kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+            kSecAttrAccessible as String: expectedAccessibility,
         ]
         var status = SecItemUpdate(
             baseQuery as CFDictionary,
@@ -122,6 +136,12 @@ public actor CodexPlanTokenStore {
             kSecAttrAccount as String: account,
             kSecAttrSynchronizable as String: false,
         ]
+    }
+
+    private var expectedAccessibility: CFString {
+        allowsBackgroundAccess
+            ? kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            : kSecAttrAccessibleWhenUnlockedThisDeviceOnly
     }
 
     private func validateConfiguration() throws {

@@ -11,6 +11,10 @@ settings:
     CODE_SIGN_STYLE: Automatic
     ENABLE_USER_SCRIPT_SANDBOXING: NO
     SWIFT_STRICT_CONCURRENCY: complete
+packages:
+  WebRTC:
+    url: https://github.com/stasel/WebRTC.git
+    exactVersion: 151.0.0
 targets:
   NightBloodRemote:
     type: application
@@ -19,6 +23,9 @@ targets:
       # Explicit allowlist: adding a fallback/LAN Swift file to the directory
       # can never silently add it to the signed direct target.
       - path: NightBloodRemote/Assets.xcassets
+      - path: CarPlayArtwork
+        type: folder
+        buildPhase: resources
       - path: NightBloodRemote/CodexOAuthCallbackServer.swift
       - path: NightBloodRemote/CodexOAuthSafariPresenter.swift
       - path: NightBloodRemote/CodexPlanOAuth.swift
@@ -45,14 +52,21 @@ targets:
       - path: NightBloodRemote/DirectNightBloodRemoteApp.swift
       - path: NightBloodRemote/DirectSettingsView.swift
       - path: NightBloodRemote/DirectVoiceBackgroundAudio.swift
+      - path: NightBloodRemote/DirectVoiceReadyCuePlayer.swift
+      - path: NightBloodRemote/DirectNativeWebRTCSession.swift
       - path: NightBloodRemote/DirectVoiceSessionModel.swift
       - path: NightBloodRemote/FrontCameraGazeTracker.swift
       - path: NightBloodRemote/NightBloodLiveActivityIntents.swift
       - path: NightBloodRemote/NightBloodVoiceActivityAttributes.swift
       - path: NightBloodRemote/NightBloodVoiceLiveActivityManager.swift
+      - path: NightBloodRemote/NightBloodCarPlay.swift
+      - path: NightBloodRemote/NightBloodCarPlayDiagnostics.swift
+      - path: NightBloodRemote/NightBloodSharedRuntime.swift
       - path: CharacterPrompts/NightBlood.txt
         buildPhase: resources
       - path: CharacterPrompts/Marshmallow.txt
+        buildPhase: resources
+      - path: DesktopTranscript/desktop_transcript.py
         buildPhase: resources
     preBuildScripts:
       - name: Build bundled NightBlood face
@@ -91,12 +105,14 @@ targets:
         # on the paired host. It is deliberately off unless a fork owner opts
         # in through an uncommitted local build setting.
         NIGHTBLOOD_ENABLE_VOICE_AUTOMATIONS: NO
-        CURRENT_PROJECT_VERSION: 7
-        MARKETING_VERSION: 1.6.0
+        CURRENT_PROJECT_VERSION: 23
+        MARKETING_VERSION: 1.8.2
         GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_ENTITLEMENTS: NightBloodRemote/NightBloodRemoteCarPlay.entitlements
     dependencies:
       - target: NightBloodLiveActivity
         embed: true
+      - package: WebRTC
     scheme:
       gatherCoverageData: false
       testTargets:
@@ -114,8 +130,8 @@ targets:
         PRODUCT_NAME: NightBloodLiveActivity
         INFOPLIST_FILE: NightBloodLiveActivity/Info.plist
         DEVELOPMENT_TEAM: ""
-        CURRENT_PROJECT_VERSION: 7
-        MARKETING_VERSION: 1.6.0
+        CURRENT_PROJECT_VERSION: 23
+        MARKETING_VERSION: 1.8.2
         GENERATE_INFOPLIST_FILE: NO
         APPLICATION_EXTENSION_API_ONLY: YES
         SKIP_INSTALL: YES

@@ -21,6 +21,9 @@ final class DirectVoiceBackgroundAudioController:
             mode: .voiceChat,
             options: [.defaultToSpeaker, .allowBluetoothHFP]
         )
+        // `.defaultToSpeaker` is only the no-accessory fallback. When CarPlay
+        // supplies `.carAudio` (or the car's hands-free Bluetooth route), iOS
+        // keeps the full-duplex voice session on that external route.
         #if DEBUG
         print(
             "NightBloodAudio configured category=\(session.category.rawValue) "

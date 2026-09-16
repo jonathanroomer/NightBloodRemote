@@ -43,6 +43,36 @@ struct CodexRemoteHeartbeatAutomation: Equatable, Sendable {
         case notFound(id: String)
     }
 
+    static func readFiles(
+        names: [String],
+        read: @escaping @Sendable (String) async throws -> String?
+    ) async throws -> [String: String] {
+        guard names.count <= maximumAutomationEntries else {
+            throw CodexRemoteHeartbeatAutomationError.storeUnavailable
+        }
+        try Task.checkCancellation()
+        return try await withThrowingTaskGroup(
+            of: (String, String?).self,
+            returning: [String: String].self
+        ) { group in
+            var next = names.makeIterator()
+            for _ in 0..<min(4, names.count) {
+                if let name = next.next() {
+                    group.addTask { (name, try await read(name)) }
+                }
+            }
+            var files: [String: String] = [:]
+            for try await (name, text) in group {
+                if let text { files[name] = text }
+                try Task.checkCancellation()
+                if let name = next.next() {
+                    group.addTask { (name, try await read(name)) }
+                }
+            }
+            return files
+        }
+    }
+
     var toml: String {
         var lines = [
             "version = 1",
@@ -197,23 +227,7 @@ struct CodexRemoteHeartbeatAutomation: Equatable, Sendable {
         existingIDs: Set<String>,
         filesByID: [String: String]
     ) throws -> DeletionLookup {
-        let allowedKeys: Set<String> = [
-            "automationId", "heartbeatId", "id", "kind", "mode", "targetId",
-        ]
-        let identifiers = ["id", "automationId", "heartbeatId", "targetId"]
-            .compactMap { arguments[$0]?.stringValue }
-        guard Set(arguments.keys).isSubset(of: allowedKeys),
-              arguments["mode"]?.stringValue == "delete",
-              arguments["kind"]?.stringValue == nil
-                || arguments["kind"]?.stringValue == "heartbeat",
-              let id = identifiers.first,
-              identifiers.allSatisfy({ $0 == id }),
-              validID(id)
-        else {
-            throw CodexRemoteHeartbeatAutomationError.invalidArguments(
-                "heartbeat cancellation requires its automation id"
-            )
-        }
+        let id = try deletionID(arguments: arguments)
         guard existingIDs.contains(id) else { return .notFound(id: id) }
         guard let toml = filesByID[id] else {
             throw CodexRemoteHeartbeatAutomationError.storeUnavailable
@@ -236,6 +250,29 @@ struct CodexRemoteHeartbeatAutomation: Equatable, Sendable {
         return .owned(
             DeletionSnapshot(id: id, name: name, rrule: rrule)
         )
+    }
+
+    static func deletionID(
+        arguments: [String: CodexRemoteVoiceJSON]
+    ) throws -> String {
+        let allowedKeys: Set<String> = [
+            "automationId", "heartbeatId", "id", "kind", "mode", "targetId",
+        ]
+        let identifiers = ["id", "automationId", "heartbeatId", "targetId"]
+            .compactMap { arguments[$0]?.stringValue }
+        guard Set(arguments.keys).isSubset(of: allowedKeys),
+              arguments["mode"]?.stringValue == "delete",
+              arguments["kind"]?.stringValue == nil
+                || arguments["kind"]?.stringValue == "heartbeat",
+              let id = identifiers.first,
+              identifiers.allSatisfy({ $0 == id }),
+              validID(id)
+        else {
+            throw CodexRemoteHeartbeatAutomationError.invalidArguments(
+                "heartbeat cancellation requires its automation id"
+            )
+        }
+        return id
     }
 
     private static func stringValues(in toml: String) -> [String: String] {

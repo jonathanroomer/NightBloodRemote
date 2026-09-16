@@ -1,66 +1,33 @@
 @preconcurrency import WebKit
 import SwiftUI
 
+enum DirectFaceControllerRole {
+    case iPhone
+    case carPlay
+}
+
 struct DirectFaceWebView: UIViewRepresentable {
     let model: DirectVoiceSessionModel
+    var isVisible = true
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(model: model)
+        Coordinator(model: model, role: .iPhone)
     }
 
     func makeUIView(context: Context) -> WKWebView {
-        let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .nonPersistent()
-        configuration.allowsInlineMediaPlayback = true
-        configuration.mediaTypesRequiringUserActionForPlayback = []
-        configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
-        configuration.userContentController.addScriptMessageHandler(
-            context.coordinator,
-            contentWorld: .page,
-            name: "nightbloodDirect"
-        )
-        configuration.userContentController.add(
-            context.coordinator,
-            contentWorld: .page,
-            name: "nightbloodEvents"
-        )
-
-        let webView = WKWebView(frame: .zero, configuration: configuration)
-        webView.navigationDelegate = context.coordinator
-        webView.uiDelegate = context.coordinator
-        webView.isOpaque = true
-        webView.underPageBackgroundColor = .black
-        webView.backgroundColor = .black
-        webView.scrollView.backgroundColor = .black
-        webView.scrollView.isScrollEnabled = false
-        webView.scrollView.contentInsetAdjustmentBehavior = .never
-        webView.isUserInteractionEnabled = false
-        webView.allowsLinkPreview = false
-        webView.isInspectable = false
-        context.coordinator.webView = webView
-        context.coordinator.loadFace()
-        return webView
+        context.coordinator.makeWebView()
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
         context.coordinator.model = model
+        context.coordinator.setRenderingVisible(isVisible)
     }
 
     static func dismantleUIView(
         _ webView: WKWebView,
         coordinator: Coordinator
     ) {
-        webView.configuration.userContentController
-            .removeScriptMessageHandler(
-                forName: "nightbloodDirect",
-                contentWorld: .page
-            )
-        webView.configuration.userContentController
-            .removeScriptMessageHandler(
-                forName: "nightbloodEvents",
-                contentWorld: .page
-            )
-        webView.stopLoading()
+        coordinator.dismantleWebView(webView)
     }
 
     @MainActor
@@ -69,20 +36,88 @@ struct DirectFaceWebView: UIViewRepresentable {
         DirectFaceJavaScriptControlling
     {
         var model: DirectVoiceSessionModel
+        private let role: DirectFaceControllerRole
         weak var webView: WKWebView?
         private var trustedPage: URL?
         private var attached = false
+        private var renderingVisible = true
         private var desiredSkin: DirectFaceSkin = .nightblood
         private var appliedSkin: DirectFaceSkin?
         private var skinApplyTask: Task<Void, Never>?
         private var skinRunID: UUID?
         private var pageGeneration: UInt64 = 0
+        private var pendingGaze: GazeSample?
+        private var gazeTask: Task<Void, Never>?
+        private var gazeRunID: UUID?
 
-        init(model: DirectVoiceSessionModel) {
+        var isAttached: Bool { attached }
+
+        init(
+            model: DirectVoiceSessionModel,
+            role: DirectFaceControllerRole
+        ) {
             self.model = model
+            self.role = role
+        }
+
+        /// Builds the trusted local media controller. The iPhone presents this
+        /// view; CarPlay hosts the same controller behind its system template
+        /// so WebKit has a real active window for microphone and WebRTC work.
+        func makeWebView() -> WKWebView {
+            let configuration = WKWebViewConfiguration()
+            configuration.websiteDataStore = .nonPersistent()
+            configuration.allowsInlineMediaPlayback = true
+            configuration.mediaTypesRequiringUserActionForPlayback = []
+            configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+            configuration.userContentController.addScriptMessageHandler(
+                self,
+                contentWorld: .page,
+                name: "nightbloodDirect"
+            )
+            configuration.userContentController.add(
+                self,
+                contentWorld: .page,
+                name: "nightbloodEvents"
+            )
+
+            let webView = WKWebView(frame: .zero, configuration: configuration)
+            webView.navigationDelegate = self
+            webView.uiDelegate = self
+            webView.isOpaque = true
+            webView.underPageBackgroundColor = .black
+            webView.backgroundColor = .black
+            webView.scrollView.backgroundColor = .black
+            webView.scrollView.isScrollEnabled = false
+            webView.scrollView.contentInsetAdjustmentBehavior = .never
+            webView.isUserInteractionEnabled = false
+            webView.allowsLinkPreview = false
+            webView.isInspectable = false
+            self.webView = webView
+            loadFace()
+            return webView
+        }
+
+        func dismantleWebView(_ webView: WKWebView) {
+            cancelGazeUpdates()
+            model.detach(face: self, role: role)
+            webView.configuration.userContentController
+                .removeScriptMessageHandler(
+                    forName: "nightbloodDirect",
+                    contentWorld: .page
+                )
+            webView.configuration.userContentController
+                .removeScriptMessageHandler(
+                    forName: "nightbloodEvents",
+                    contentWorld: .page
+                )
+            webView.stopLoading()
+            if self.webView === webView {
+                self.webView = nil
+            }
         }
 
         func loadFace() {
+            cancelGazeUpdates()
             guard let webView,
                   let page = Bundle.main.url(
                       forResource: "ios-direct-bundled",
@@ -183,7 +218,8 @@ struct DirectFaceWebView: UIViewRepresentable {
                !attached
             {
                 attached = true
-                model.attach(face: self)
+                model.attach(face: self, role: role)
+                applyRenderingVisibility()
             }
             model.handleEventMessage(message.body)
         }
@@ -218,7 +254,7 @@ struct DirectFaceWebView: UIViewRepresentable {
 
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
             attached = false
-            model.faceProcessWillReload()
+            model.faceProcessWillReload(face: self, role: role)
             loadFace()
         }
 
@@ -380,8 +416,11 @@ struct DirectFaceWebView: UIViewRepresentable {
 
         func start(character: DirectFaceSkin) {
             call(
-                "return await window.NightBloodDirect?.start(character)",
-                arguments: ["character": character.rawValue]
+                "return await window.NightBloodDirect?.start(character, readySound)",
+                arguments: [
+                    "character": character.rawValue,
+                    "readySound": model.readySound.rawValue,
+                ]
             )
         }
 
@@ -393,11 +432,64 @@ struct DirectFaceWebView: UIViewRepresentable {
             call("return await window.NightBloodDirect?.closeLocalOnly()")
         }
 
-        func gaze(_ sample: GazeSample) {
+        func setRenderingVisible(_ visible: Bool) {
+            guard renderingVisible != visible else { return }
+            renderingVisible = visible
+            if role == .iPhone { model.setFaceVisible(visible) }
+            if !visible { cancelGazeUpdates() }
+            applyRenderingVisibility()
+        }
+
+        private func applyRenderingVisibility() {
+            guard attached else { return }
             call(
-                "return window.NightBloodDirect?.gaze(sample)",
-                arguments: ["sample": sample.bridgePayload]
+                "window.nightbloodRenderVisible = visible; "
+                    + "window.dispatchEvent(new Event('nightblood-render-visibility'));",
+                arguments: ["visible": renderingVisible]
             )
+        }
+
+        func gaze(_ sample: GazeSample) {
+            guard renderingVisible, attached, let webView, isTrustedURL(webView.url) else { return }
+            pendingGaze = sample
+            guard gazeTask == nil else { return }
+            let runID = UUID()
+            let generation = pageGeneration
+            gazeRunID = runID
+            gazeTask = Task { @MainActor [weak self, weak webView] in
+                guard let self else { return }
+                defer {
+                    if self.gazeRunID == runID {
+                        self.gazeRunID = nil
+                        self.gazeTask = nil
+                    }
+                }
+                // One in flight, one replaceable sample. Positions are
+                // transient; delivering a backlog makes the eyes lag behind.
+                while !Task.isCancelled,
+                      self.attached, self.pageGeneration == generation,
+                      let webView, self.isTrustedURL(webView.url),
+                      let latest = self.pendingGaze {
+                    self.pendingGaze = nil
+                    do {
+                        _ = try await webView.callAsyncJavaScript(
+                            "return window.NightBloodDirect?.gaze(sample)",
+                            arguments: ["sample": latest.bridgePayload],
+                            in: nil,
+                            contentWorld: .page
+                        )
+                    } catch {
+                        return
+                    }
+                }
+            }
+        }
+
+        private func cancelGazeUpdates() {
+            gazeTask?.cancel()
+            gazeTask = nil
+            gazeRunID = nil
+            pendingGaze = nil
         }
 
         private func call(

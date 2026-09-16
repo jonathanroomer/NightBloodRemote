@@ -10,10 +10,21 @@ local TrueDepth gaze input and a Lock Screen Live Activity. I have also included
 the Blender scripts I used to work out the original face design and its
 different listening, thinking, speaking and failure states.
 
-This is a clean public-source snapshot of the private iOS 1.6.0 prototype. It
+This is a privacy-sanitised public-source snapshot of the iOS 1.8.2 build 23 release. It
 contains no private Git history, developer-team identifier, provisioning
 profile, device identifier, host name, bearer token, account identifier,
 personal prompt text or sampled voice clip.
+
+## September update
+
+This snapshot follows version **1.8.2, build 23**. It adds native CarPlay,
+clearer connection errors, a Reconnect button, desktop transcript attachment,
+and smoother face rendering. The public build uses generic editable prompts,
+procedural chimes and a system terminal symbol for the intro. No private voice
+samples or vendor app icon are redistributed. See [release notes](docs/RELEASE_1.8.2.md).
+
+CarPlay requires iOS 26.4 or later and Apple's approval for the Voice Based
+Conversation entitlement. A simulator build does not establish that approval.
 
 ## One important connection caveat
 
@@ -101,10 +112,12 @@ result as a small set of runtime parameters. The full route is in
 
 ## What is included
 
-- A SwiftUI portrait app and Live Activity extension.
+- A SwiftUI portrait app, Live Activity extension and native CarPlay surface.
+- CarPlay connection and error states, Reconnect, and an intro image that switches to the face on Talk.
+- Desktop transcript attachment and rendering/startup performance improvements.
 - Secure Enclave P-256 device identity and a Face ID session gate.
 - Device-only Keychain storage for tokens and pairing metadata.
-- WebRTC microphone and speaker handling inside a media-only `WKWebView`.
+- WebRTC microphone and speaker handling in a media-only `WKWebView` on the phone and native WebRTC in CarPlay.
 - Two live WebGL faces with gaze, state, colour and amplitude animation.
 - Generic procedural startup chimes with no third-party audio samples.
 - Blender 5.2 scene-generation and rendering scripts.

@@ -167,3 +167,58 @@ final class CodexRemoteHeartbeatAutomationTests: XCTestCase {
         ]
     }
 }
+
+extension CodexRemoteHeartbeatAutomationTests {
+    func testBoundedAutomationReadsWithInjectedRoundTrips() async throws {
+        for count in [1, 20, 128] {
+            let fixture = AutomationReadLatencyFixture()
+            let names = (0..<count).map { "fixture-\($0)" }
+            let files = try await CodexRemoteHeartbeatAutomation.readFiles(names: names) {
+                try await fixture.read($0)
+            }
+            let peak = await fixture.maximumActive
+            let requests = await fixture.requests
+            XCTAssertEqual(files.count, count)
+            XCTAssertEqual(requests, count * 2)
+            XCTAssertEqual(peak, min(4, count))
+        }
+    }
+
+    func testAutomationReadCancellationDoesNotLaunchMoreWork() async throws {
+        let fixture = AutomationReadLatencyFixture(delay: .seconds(30))
+        let reading = Task {
+            try await CodexRemoteHeartbeatAutomation.readFiles(
+                names: (0..<128).map { "fixture-\($0)" }
+            ) { try await fixture.read($0) }
+        }
+        try await Task.sleep(for: .milliseconds(20))
+        reading.cancel()
+        do {
+            _ = try await reading.value
+            XCTFail("cancelled filesystem traversal returned success")
+        } catch is CancellationError {
+            let requests = await fixture.requests
+            XCTAssertLessThanOrEqual(requests, 4)
+        }
+    }
+}
+
+private actor AutomationReadLatencyFixture {
+    private var active = 0
+    private(set) var maximumActive = 0
+    private(set) var requests = 0
+    private let delay: Duration
+
+    init(delay: Duration = .milliseconds(2)) { self.delay = delay }
+
+    func read(_ name: String) async throws -> String? {
+        active += 1
+        maximumActive = max(maximumActive, active)
+        defer { active -= 1 }
+        requests += 1 // list directory
+        try await Task.sleep(for: delay)
+        requests += 1 // read bounded TOML
+        try await Task.sleep(for: delay)
+        return "id = \"\(name)\""
+    }
+}

@@ -1,28 +1,37 @@
 import SwiftUI
 import UIKit
 
+@MainActor
+final class NightBloodApplicationDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions:
+            [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        // Initialise process-owned state at application launch. A CarPlay app
+        // may be launched into only a car scene, with no iPhone WindowGroup.
+        _ = NightBloodSharedRuntime.shared
+        NightBloodCarPlayDiagnostics.record("application.didFinishLaunching")
+        return true
+    }
+}
+
 @main
 @MainActor
 struct DirectNightBloodRemoteApp: App {
+    @UIApplicationDelegateAdaptor(NightBloodApplicationDelegate.self)
+    private var applicationDelegate
     @Environment(\.scenePhase) private var scenePhase
-    @State private var setup = DirectCodexRemoteSetupModel()
+    @State private var setup: DirectCodexRemoteSetupModel
     @State private var voice: DirectVoiceSessionModel
-    @State private var accessGate = DeviceAccessGate()
+    @State private var accessGate: DeviceAccessGate
 
     init() {
-        let voice = DirectVoiceSessionModel()
-        _voice = State(initialValue: voice)
-        NightBloodLiveActivityActionBus.install { [weak voice] action in
-            guard let voice else { return }
-            switch action {
-            case .toggleMicrophone:
-                await voice.toggleMicrophoneInput()
-            case .stopConversation:
-                voice.stopFromUserGesture()
-            case .toggleSpeakerOutput:
-                await voice.toggleSpeakerOutput()
-            }
-        }
+        let runtime = NightBloodSharedRuntime.shared
+        NightBloodCarPlayDiagnostics.record("swiftui.app.init")
+        _setup = State(initialValue: runtime.setup)
+        _voice = State(initialValue: runtime.voice)
+        _accessGate = State(initialValue: runtime.accessGate)
     }
 
     var body: some Scene {
@@ -37,7 +46,6 @@ struct DirectNightBloodRemoteApp: App {
                 if scenePhase == .active {
                     UIApplication.shared.isIdleTimerDisabled = true
                 }
-                voice.install(setup: setup)
                 guard await accessGate.unlock() else { return }
                 setup.applicationDidBecomeActive()
                 setup.refreshPersistedState()
@@ -82,7 +90,13 @@ struct DirectNightBloodRemoteApp: App {
                 // cancel and discard credentials exactly as before.
                 voice.applicationDidEnterBackground()
                 setup.applicationDidEnterBackground()
-                accessGate.lock()
+                // The system-hosted CarPlay scene remains an active, paired
+                // control surface even though the phone scene is background.
+                // Preserve the already-authenticated Secure Enclave context
+                // for that drive; CarPlay disconnect locks it immediately.
+                if !voice.isCarPlayConnected {
+                    accessGate.lock()
+                }
             case .inactive:
                 // Face ID and other system overlays temporarily make the app
                 // inactive. Cancelling authentication here creates a prompt /

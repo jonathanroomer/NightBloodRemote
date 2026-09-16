@@ -14,7 +14,7 @@ enum DirectCharacterPromptStore {
         else {
             throw CodexRemoteVoiceError.invalidPrompt
         }
-        return try CodexRemoteVoicePrompt(validating: text)
+        return try CodexRemoteVoicePrompt(validating: text, character: character)
     }
 }
 

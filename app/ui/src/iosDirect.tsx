@@ -22,7 +22,7 @@ interface NightBloodDirectBridge {
   setOutputMuted(muted: unknown): boolean;
   resumeAfterBackground(state: unknown): Promise<boolean>;
   setSkin(candidate: unknown): FaceSkin | null;
-  start(candidate: unknown): Promise<void>;
+  start(candidate: unknown, readySound?: unknown): Promise<void>;
   stop(): Promise<void>;
   closeLocalOnly(): Promise<void>;
   gaze(sample: Watched): void;
@@ -31,15 +31,15 @@ interface NightBloodDirectBridge {
 declare global {
   interface Window {
     NightBloodDirect?: NightBloodDirectBridge;
-    webkit?: {
-      messageHandlers?: {
-        nightbloodDirect?: {
-          postMessage(message: Record<string, unknown>): Promise<unknown>;
-        };
-        nightbloodEvents?: {
-          postMessage(message: NativeEvent): void;
-        };
-      };
+    webkit?: NightBloodWebKit;
+  }
+  interface NightBloodWebKit { messageHandlers?: NightBloodMessageHandlers }
+  interface NightBloodMessageHandlers {
+    nightbloodDirect?: {
+      postMessage(message: Record<string, unknown>): Promise<unknown>;
+    };
+    nightbloodEvents?: {
+      postMessage(message: NativeEvent): void;
     };
   }
 }
@@ -69,6 +69,7 @@ function requireStartReply(value: unknown): DirectRealtimeStartReply {
 function FaceApp() {
   const [faceSkin, setFaceSkin] = useState<FaceSkin>("nightblood");
   const faceSkinRef = useRef<FaceSkin>("nightblood");
+  const readySoundRef = useRef<"character" | "tone">("character");
   const [connection, setConnection] = useState<ConnectionState>("offline");
   const [interaction, setInteraction] = useState<InteractionState>("idle");
   const [errorTransient, setErrorTransient] = useState(false);
@@ -188,7 +189,7 @@ function FaceApp() {
         }
       },
     }, {
-      getStartupCue: () => randomStartupCue(faceSkinRef.current),
+      getStartupCue: () => readySoundRef.current === "tone" ? null : randomStartupCue(faceSkinRef.current),
     });
 
     window.NightBloodDirect = {
@@ -233,7 +234,8 @@ function FaceApp() {
         setFaceSkin(skin);
         return skin;
       },
-      async start(candidate) {
+      async start(candidate, readySound) {
+        readySoundRef.current = readySound === "tone" ? "tone" : "character";
         const skin = parseFaceSkin(candidate);
         if (!skin) throw new Error("The selected NightBlood character is invalid.");
         // The start grant is bound to this native-selected character. Apply it

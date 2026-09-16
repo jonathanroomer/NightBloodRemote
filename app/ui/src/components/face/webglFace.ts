@@ -42,6 +42,8 @@ uniform vec2 uResolution;
 // window-relative, so tiling several faces into one canvas needs this to be
 // subtracted; it is (0,0) for a normal full-canvas render.
 uniform vec2 uOrigin;
+// Offline CarPlay artwork export only; normal phone/Mac rendering stays opaque.
+uniform bool uCarPlayExport;
 uniform float uApertureL, uApertureR;
 uniform float uEyeGain;
 uniform vec2 uGaze, uGazeL, uGazeR;
@@ -297,6 +299,7 @@ void main() {
   float aspect = uResolution.x / uResolution.y;
   // Frame space: x in [-0.5, 0.5] of width, y scaled to match.
   vec2 p = (uv - 0.5) * vec2(1.0, 1.0 / aspect);
+  if (uCarPlayExport) p *= 0.60;
 
   // C: tremor. Not displacement you could track — a shimmer. Tiny on purpose;
   // much more than this and it reads as a rendering fault rather than a voice.
@@ -353,6 +356,9 @@ void main() {
   mirrored.y += sin(p.x * 34.0 + uTime * 6.5) * 0.005 * ripple;
   vec3 refl = renderEyes(mirrored, 1.0) * (0.045 + 0.075 * ripple);
   vec3 col = mix(bg, floorCol + refl, floorFac);
+  // A floor painted across the tile would reveal a rectangle on CarPlay's
+  // system backdrop. Keep the original drifting haze, eyes and speaking mouth.
+  if (uCarPlayExport) col = bg;
 
   col += renderEyes(p, 0.0);
   // White, not the old warm gold: against ivory eyes the copper read as a
@@ -386,7 +392,15 @@ void main() {
   float strip = smoothstep(0.022, 0.0, uv.y);
   col += vec3(0.015, 0.42, 0.08) * strip * min(1.0, 0.10 * uSeen + 0.90 * uLooking);
 
-  outColor = vec4(pow(col, vec3(1.0 / 2.2)), 1.0);
+  if (uCarPlayExport) {
+    vec3 light = pow(clamp(col, 0.0, 1.0), vec3(1.0 / 2.2));
+    // Emissive light over the system background: black is transparent and
+    // smoke/halos retain soft alpha, without keying away their dark detail.
+    float alpha = max(light.r, max(light.g, light.b));
+    outColor = vec4(alpha > 0.0 ? light / alpha : vec3(0.0), alpha);
+  } else {
+    outColor = vec4(pow(col, vec3(1.0 / 2.2)), 1.0);
+  }
 }`;
 
 export class FaceRenderer {
@@ -406,13 +420,16 @@ export class FaceRenderer {
   /** Scrolling authorised-amplitude history, newest last. Feeds the waveform. */
   private waveHistory = new Float32Array(64);
 
-  constructor(canvas: HTMLCanvasElement) {
-    const gl = canvas.getContext("webgl2", { antialias: true, alpha: false });
+  constructor(canvas: HTMLCanvasElement, carPlayExport = false) {
+    const gl = canvas.getContext("webgl2", {
+      antialias: true, alpha: carPlayExport, premultipliedAlpha: false,
+      preserveDrawingBuffer: carPlayExport,
+    });
     if (!gl) throw new Error("WebGL2 unavailable");
     this.gl = gl;
     this.program = this.link(VERT, FRAG);
     for (const name of [
-      "uResolution", "uOrigin", "uApertureL", "uApertureR", "uEyeGain",
+      "uResolution", "uOrigin", "uCarPlayExport", "uApertureL", "uApertureR", "uEyeGain",
       "uGaze", "uGazeL", "uGazeR", "uGazeTravel", "uTiltL", "uTiltR", "uSquintL", "uSquintR",
       "uDriftPhase1", "uDriftPhase2", "uDriftRadius", "uNoiseContrast",
       "uBackdropGain", "uVioletMix", "uRedMix",
@@ -422,6 +439,8 @@ export class FaceRenderer {
     ]) {
       this.uniforms[name] = gl.getUniformLocation(this.program, name);
     }
+    gl.useProgram(this.program);
+    gl.uniform1i(this.uniforms.uCarPlayExport, carPlayExport ? 1 : 0);
   }
 
   private link(vertSrc: string, fragSrc: string): WebGLProgram {

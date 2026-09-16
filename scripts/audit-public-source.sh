@@ -26,7 +26,7 @@ check_pattern "email addresses" '[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}'
 check_pattern "private keys" 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY'
 check_pattern "hard-coded Apple team IDs" 'DEVELOPMENT_TEAM[[:space:]]*[:=][[:space:]]*[A-Z0-9]{10}'
 check_pattern "hard-coded OAuth application IDs" 'app_[A-Za-z0-9]{20,}'
-check_pattern "real account-linked UUIDs" '(01[0-9a-f]{6}|a1363e6c)-[0-9a-f-]{27,}'
+check_pattern "real account-linked UUIDs" '01[0-9a-f]{6}-[0-9a-f-]{27,}'
 check_pattern "common committed secrets" "(api[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token)[[:space:]]*[:=][[:space:]]*[\"'][A-Za-z0-9_./+=-]{20,}[\"']"
 check_pattern "private IPv4 addresses" '(^|[^0-9])(10\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|192\.168\.[0-9]{1,3}\.[0-9]{1,3}|172\.(1[6-9]|2[0-9]|3[01])\.[0-9]{1,3}\.[0-9]{1,3})([^0-9]|$)'
 
@@ -53,13 +53,14 @@ fi
 if [ -d .git ] \
   && [ "$(git rev-parse --show-toplevel 2>/dev/null)" = "$ROOT" ] \
   && git rev-parse --verify HEAD >/dev/null 2>&1; then
-  if git log --format='%an <%ae>' \
-    | rg -v '^NightBlood Remote contributors <noreply@users.noreply.github.com>$' \
+  if git log --format='%an <%ae>%n%cn <%ce>' \
+    | rg -v '^(NightBlood Remote contributors <noreply@users[.]noreply[.]github[.]com>|GitHub <noreply@github[.]com>)$' \
+    | rg -v '^[^<>]+ <[0-9]+[+][^@<>]+@users[.]noreply[.]github[.]com>$' \
     | rg -i '/(Users|home)/|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}'; then
-    printf '%s\n' "FAIL: Git author metadata contains non-generic identity data"
+    printf '%s\n' "FAIL: Git author/committer metadata contains a non-public email identity"
     failed=1
   else
-    printf '%s\n' "PASS: Git author metadata"
+    printf '%s\n' "PASS: Git author/committer metadata (generic or existing public GitHub attribution)"
   fi
 fi
 

@@ -2,6 +2,35 @@ import XCTest
 @testable import NightBlood
 
 final class DirectVoiceLifecycleTests: XCTestCase {
+    @MainActor
+    func testVoiceIsUnavailableBeforeDesktopAcknowledgement() {
+        let model = DirectVoiceSessionModel(
+            liveActivityPublisher: RecordingLiveActivityPublisher()
+        )
+        model.state = .ready
+        // A presentation state alone cannot grant microphone/voice access.
+        XCTAssertFalse(model.canStartVoice)
+        XCTAssertFalse(model.hasOwnedVoice)
+    }
+
+    @MainActor
+    func testKnownFailureOffersConnectionRetryButUnknownDoesNot() {
+        let model = DirectVoiceSessionModel(
+            liveActivityPublisher: RecordingLiveActivityPublisher()
+        )
+        model.state = .failed
+        XCTAssertTrue(model.canRetryVoiceConnection)
+        model.authoriseAndStartFromUserGesture()
+        XCTAssertFalse(model.hasOwnedVoice)
+        XCTAssertFalse(model.canStartVoice)
+        model.state = .outcomeUnknown
+        XCTAssertFalse(model.canRetryVoiceConnection)
+        model.authoriseAndStartFromUserGesture()
+        XCTAssertEqual(model.state, .outcomeUnknown)
+    }
+
+    @MainActor
+
     func testOnlyEstablishedInteractiveStatesContinueInBackground() {
         XCTAssertTrue(DirectVoiceSessionState.listening.mayContinueInBackground)
         XCTAssertTrue(DirectVoiceSessionState.thinking.mayContinueInBackground)
@@ -79,6 +108,141 @@ final class DirectVoiceLifecycleTests: XCTestCase {
         XCTAssertEqual(face.availability, [false])
         XCTAssertEqual(model.state, .listening)
     }
+
+    @MainActor
+    func testCumulativeUserTranscriptRevisionReplacesInsteadOfAppending() {
+        let model = DirectVoiceSessionModel(
+            liveActivityPublisher: RecordingLiveActivityPublisher()
+        )
+
+        model.mergeTranscript(role: "user", text: "Can you hear", done: false)
+        model.mergeTranscript(
+            role: "user",
+            text: "Can you clearly hear me",
+            done: false
+        )
+        model.mergeTranscript(
+            role: "user",
+            text: "Can you clearly hear me?",
+            done: true
+        )
+
+        XCTAssertEqual(model.transcript.count, 1)
+        XCTAssertEqual(model.transcript[0].text, "Can you clearly hear me?")
+        XCTAssertTrue(model.transcript[0].isFinal)
+    }
+
+    @MainActor
+    func testNativeIncrementalUserTranscriptStaysInOneMessage() {
+        let model = DirectVoiceSessionModel(
+            liveActivityPublisher: RecordingLiveActivityPublisher()
+        )
+
+        model.mergeTranscript(
+            role: "user",
+            text: "Carry",
+            done: false,
+            partialSemantics: .incremental
+        )
+        model.mergeTranscript(
+            role: "user",
+            text: " on",
+            done: false,
+            partialSemantics: .incremental
+        )
+        model.mergeTranscript(role: "user", text: "Carry on", done: true)
+
+        XCTAssertEqual(model.transcript.count, 1)
+        XCTAssertEqual(model.transcript[0].text, "Carry on")
+        XCTAssertTrue(model.transcript[0].isFinal)
+    }
+
+    @MainActor
+    func testUserFinalReconcilesAfterAssistantStartsResponding() {
+        let model = DirectVoiceSessionModel(
+            liveActivityPublisher: RecordingLiveActivityPublisher()
+        )
+
+        model.mergeTranscript(
+            role: "user",
+            text: "Can you hear",
+            done: false
+        )
+        let liveTranscriptID = model.transcript[0].id
+        model.mergeTranscript(
+            role: "assistant",
+            text: "Yes",
+            done: false
+        )
+        model.mergeTranscript(
+            role: "user",
+            text: "Can you hear me?",
+            done: true
+        )
+
+        XCTAssertEqual(model.transcript.count, 2)
+        XCTAssertEqual(model.transcript[0].id, liveTranscriptID)
+        XCTAssertEqual(model.transcript[0].text, "Can you hear me?")
+        XCTAssertTrue(model.transcript[0].isFinal)
+        XCTAssertEqual(model.transcript[1].role, .codex)
+        XCTAssertFalse(model.transcript[1].isFinal)
+    }
+
+    @MainActor
+    func testAssistantFinalReconcilesAfterUserStartsSpeaking() {
+        let model = DirectVoiceSessionModel(
+            liveActivityPublisher: RecordingLiveActivityPublisher()
+        )
+
+        model.mergeTranscript(
+            role: "assistant",
+            text: "The answer is",
+            done: false
+        )
+        let liveTranscriptID = model.transcript[0].id
+        model.mergeTranscript(role: "user", text: "Wait", done: false)
+        model.mergeTranscript(
+            role: "assistant",
+            text: "The answer is forty-two.",
+            done: true
+        )
+
+        XCTAssertEqual(model.transcript.count, 2)
+        XCTAssertEqual(model.transcript[0].id, liveTranscriptID)
+        XCTAssertEqual(
+            model.transcript[0].text,
+            "The answer is forty-two."
+        )
+        XCTAssertTrue(model.transcript[0].isFinal)
+        XCTAssertEqual(model.transcript[1].role, .user)
+        XCTAssertFalse(model.transcript[1].isFinal)
+    }
+
+    @MainActor
+    func testRepeatedCompletedPhraseRemainsASeparateUserTurn() {
+        let model = DirectVoiceSessionModel(
+            liveActivityPublisher: RecordingLiveActivityPublisher()
+        )
+        for _ in 0..<3 {
+            model.mergeTranscript(role: "user", text: "Carry on", done: true)
+        }
+        XCTAssertEqual(model.transcript.count, 3)
+        XCTAssertEqual(Set(model.transcript.map(\.id)).count, 3)
+        XCTAssertTrue(model.transcript.allSatisfy {
+            $0.text == "Carry on" && $0.isFinal
+        })
+    }
+
+    @MainActor
+    func testNewUtteranceSharingPrefixIsNotCollapsed() {
+        let model = DirectVoiceSessionModel(
+            liveActivityPublisher: RecordingLiveActivityPublisher()
+        )
+        model.mergeTranscript(role: "user", text: "Carry on", done: true)
+        model.mergeTranscript(role: "user", text: "Carry on please", done: true)
+        XCTAssertEqual(model.transcript.map(\.text), ["Carry on", "Carry on please"])
+    }
+
 }
 
 @MainActor

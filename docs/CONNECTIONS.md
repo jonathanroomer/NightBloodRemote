@@ -247,3 +247,24 @@ After suspected compromise, revoke upstream sessions/controllers, change the
 account credentials if required, remove the affected host access, and rebuild
 from reviewed source. Do not publish tokens, pairing codes or private logs when
 asking for help.
+
+## CarPlay and desktop transcript attachment
+
+CarPlay uses native WebRTC and the same process-wide voice model as the phone.
+It requires Apple's Voice Based Conversation entitlement on iOS 26.4 or later.
+Its controller records use device-only Keychain accessibility after the first
+unlock following a reboot, allowing a locked-phone CarPlay launch. This differs
+from the foreground phone's Face ID interaction. Review that access policy
+before distributing a fork, and provision only a least-privilege paired host.
+
+Before Voice can start, the app sends its bundled Python transcript helper via
+App Server `command/exec`. The helper reads the selected task's desktop
+transcript and streams it through the authenticated controller connection.
+This is host command execution even when optional Voice task creation and
+heartbeat mutations are disabled. It is not a general shell tool exposed by
+the phone UI. The host must support the helper endpoint and Python environment.
+The app requires the expected task and stream identity before allowing Voice.
+
+Ready means connection preparation completed. Talk starts a new voice session.
+Reconnect refreshes idle setup and transcript attachment. Unknown outcomes
+remain blocked for review, and previously executed actions are never replayed.

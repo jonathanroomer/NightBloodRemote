@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import OSLog
 import UIKit
 
 enum DirectVoiceSessionState: String, Sendable {
@@ -45,6 +46,18 @@ enum DirectVoiceSessionState: String, Sendable {
     }
 }
 
+enum DirectReadySound: String, CaseIterable, Sendable {
+    case character
+    case tone
+
+    var label: String {
+        switch self {
+        case .character: "Character welcome"
+        case .tone: "Short ready tone"
+        }
+    }
+}
+
 enum DirectFaceSkin: String, CaseIterable, Sendable {
     case nightblood
     case marshmallow
@@ -55,6 +68,11 @@ enum DirectFaceSkin: String, CaseIterable, Sendable {
         case .marshmallow: "Marshmallow"
         }
     }
+}
+
+private enum DirectVoiceStartSurface {
+    case iPhone
+    case carPlay
 }
 
 struct DirectTranscriptItem: Identifiable, Equatable {
@@ -79,6 +97,13 @@ struct DirectTranscriptItem: Identifiable, Equatable {
         self.text = text
         self.isFinal = isFinal
     }
+}
+
+enum DirectTranscriptPartialSemantics {
+    /// The event contains the complete in-progress text seen so far.
+    case cumulative
+    /// The event contains only the next exact fragment.
+    case incremental
 }
 
 /// A native-only provider creates the bounded voice transport. The WebView
@@ -126,21 +151,32 @@ final class DirectVoiceSessionModel {
     /// a real background transition invalidates the lifecycle generation.
     private static let foregroundSettleTimeout: TimeInterval = 5
 
+    /// WebKit normally reaches either the native SDP bridge or the live media
+    /// event within a few seconds. A native watchdog is still required because
+    /// a suspended page cannot run its own JavaScript timeout, which otherwise
+    /// leaves every surface permanently showing Connecting until force-quit.
+    private static let defaultStartupWatchdogDuration: Duration = .seconds(20)
+
     private enum StorageKey {
         static let taskID = "nightblood.direct.codex-task-id"
         static let faceSkin = "nightblood.face.skin"
+        static let readySound = "nightblood.direct.ready-sound"
         static let nightBloodVoice = "nightblood.direct.voice.nightblood"
         static let marshmallowVoice = "nightblood.direct.voice.marshmallow"
     }
 
     let agentName: String
+    var readySound: DirectReadySound = .character {
+        didSet { UserDefaults.standard.set(readySound.rawValue, forKey: StorageKey.readySound) }
+    }
     private(set) var selectedFace: DirectFaceSkin = .nightblood {
         didSet {
             UserDefaults.standard.set(
                 selectedFace.rawValue,
                 forKey: StorageKey.faceSkin
             )
-            face?.setSkin(selectedFace)
+            iPhoneFace?.setSkin(selectedFace)
+            carPlayFace?.setSkin(selectedFace)
         }
     }
     private(set) var nightBloodVoice: CodexRemoteVoiceName = .cove {
@@ -168,7 +204,11 @@ final class DirectVoiceSessionModel {
     var state: DirectVoiceSessionState = .unavailable {
         didSet { publishLiveActivityState() }
     }
-    var transcript: [DirectTranscriptItem] = []
+    var transcript: [DirectTranscriptItem] = [] {
+        didSet { transcriptRevision &+= 1 }
+    }
+    private(set) var transcriptRevision: UInt64 = 0
+    private(set) var transcriptCompletionRevision: UInt64 = 0
     var lastError: String?
     var taskReference: String {
         didSet {
@@ -184,8 +224,37 @@ final class DirectVoiceSessionModel {
         }
     }
     private(set) var webReady = false
+    private(set) var isCarPlayConnected = false
+    private(set) var readyFlashActive = false
+    private var readyFlashTask: Task<Void, Never>?
 
     var hasOwnedVoice: Bool { voice != nil }
+    var canStartVoice: Bool {
+        state == .ready && desktopPrepared && desktopTransport != nil
+    }
+    var canRetryVoiceConnection: Bool {
+        state == .failed && voice == nil && stopOperation == nil
+    }
+
+    var isPreparingDesktopConnection: Bool {
+        desktopPreparationID != nil && !desktopPrepared
+    }
+
+    var canReconnectFromCarPlay: Bool {
+        isCarPlayConnected && canSelectFace && !isPreparingDesktopConnection
+    }
+
+    /// Rebuild only idle connection preparation. Never clear an uncertain
+    /// session, issue a realtime start, or replay a transcript/tool action.
+    @discardableResult
+    func resetCarPlayConnectionPreparation() -> Bool {
+        guard canReconnectFromCarPlay else { return false }
+        cancelDesktopPreparation()
+        desktopPreparationFailed = false
+        state = .unavailable
+        lastError = nil
+        return true
+    }
 
     var canSelectFace: Bool {
         voice == nil
@@ -199,15 +268,45 @@ final class DirectVoiceSessionModel {
     var canChangeVoicePreferences: Bool { canSelectFace }
 
     private weak var setup: (any DirectCodexVoiceTransportCreating)?
-    private weak var face: (any DirectFaceJavaScriptControlling)?
+    private weak var iPhoneFace: (any DirectFaceJavaScriptControlling)?
+    private weak var carPlayFace: (any DirectFaceJavaScriptControlling)?
+    private weak var sessionFace: (any DirectFaceJavaScriptControlling)?
+    private var isCarPlayMediaSurfaceHosted = false
+    private var face: (any DirectFaceJavaScriptControlling)? {
+        // Never switch media owners during a conversation just because the
+        // phone UI later appears. Before start, prefer its proven attached
+        // controller; a CarPlay-only launch uses the controller hosted by the
+        // active CPWindow rather than a suspended, detached WKWebView.
+        if let sessionFace { return sessionFace }
+        return iPhoneFace ?? carPlayFace
+    }
     private let backgroundAudio: any DirectVoiceBackgroundAudioConfiguring
+    private let nativeMediaFactory: any DirectNativeVoiceMediaCreating
     private let liveActivityPublisher: any DirectVoiceLiveActivityPublishing
+    private let startupWatchdogDuration: Duration
+    private let interactiveSurfaceIsActive: @MainActor () -> Bool
     private let gazeTracker = FrontCameraGazeTracker()
+    private var gazeRequested = false
+    private var faceVisible = true
+    @ObservationIgnored private var performanceID = UUID()
+    @ObservationIgnored private var performanceOrigin = ProcessInfo.processInfo.systemUptime
+    private static let performanceLog = Logger(subsystem: "com.example.nightblood.remote", category: "performance")
     private var latestGaze = GazeSample.absent
     private var voice: CodexRemoteVoiceTransport?
+    private var desktopPreparation: Task<Void, Never>?
+    private var desktopPreparationID: UUID?
+    private var desktopPreparedTaskID: String?
+    private var desktopTransport: CodexRemoteVoiceTransport?
+    private var desktopPrepared = false
+    private var desktopPreparationFailed = false
+    private var appInBackground = false
     private var voiceUpdatesTask: Task<Void, Never>?
+    private var nativeTranscriptUpdatesTask: Task<Void, Never>?
+    private var nativeMedia: (any DirectNativeVoiceMediaControlling)?
     private var oneShotStartGrant: StartGrant?
     private var activeStartOperationID: UUID?
+    private var preparedStartID: UUID?
+    private var preparedStart: Task<CodexRemoteVoiceTransport, any Error>?
     private var lifecycleGeneration: UInt64 = 0
     private var stopOperation: Task<Void, any Error>?
     private var stopOperationVoice: CodexRemoteVoiceTransport?
@@ -218,15 +317,8 @@ final class DirectVoiceSessionModel {
     private var inputMuteOperationID: UUID?
     private var outputMuteOperationID: UUID?
     private var awaitingMediaReady = false
+    private var startupWatchdog: Task<Void, Never>?
     private var conversationWasBackgrounded = false
-    private var recentUserFinal: RecentTranscriptFinal?
-    private var recentCodexFinal: RecentTranscriptFinal?
-
-    private struct RecentTranscriptFinal {
-        let itemID: UUID
-        let text: String
-        let receivedAt: Date
-    }
 
     private struct StartGrant {
         let id: UUID
@@ -235,19 +327,31 @@ final class DirectVoiceSessionModel {
         let character: DirectFaceSkin
         let realtimeVoice: CodexRemoteVoiceName
         let personalityPrompt: CodexRemoteVoicePrompt
+        let readySound: DirectReadySound
         let lifecycleGeneration: UInt64
+        let surface: DirectVoiceStartSurface
     }
 
     init(
         agentName: String = "NightBlood",
         backgroundAudio: any DirectVoiceBackgroundAudioConfiguring =
             DirectVoiceBackgroundAudioController(),
+        nativeMediaFactory: any DirectNativeVoiceMediaCreating =
+            DirectNativeWebRTCSessionFactory(),
         liveActivityPublisher: any DirectVoiceLiveActivityPublishing =
-            NightBloodVoiceLiveActivityManager.shared
+            NightBloodVoiceLiveActivityManager.shared,
+        startupWatchdogDuration: Duration =
+            DirectVoiceSessionModel.defaultStartupWatchdogDuration,
+        interactiveSurfaceIsActive: @escaping @MainActor () -> Bool = {
+            NightBloodVoiceSceneActivity.isInteractive
+        }
     ) {
         self.agentName = agentName
         self.backgroundAudio = backgroundAudio
+        self.nativeMediaFactory = nativeMediaFactory
         self.liveActivityPublisher = liveActivityPublisher
+        self.startupWatchdogDuration = startupWatchdogDuration
+        self.interactiveSurfaceIsActive = interactiveSurfaceIsActive
         let defaults = UserDefaults.standard
         selectedFace = defaults.string(forKey: StorageKey.faceSkin)
             .flatMap(DirectFaceSkin.init(rawValue:)) ?? .nightblood
@@ -258,6 +362,8 @@ final class DirectVoiceSessionModel {
         // A task ID is account metadata. Public builds start empty. Older
         // builds could store the complete pasted link, so canonicalise it on
         // read and immediately discard any other stored representation.
+        readySound = defaults.string(forKey: StorageKey.readySound)
+            .flatMap(DirectReadySound.init(rawValue:)) ?? .tone
         let storedTaskReference = defaults.string(forKey: StorageKey.taskID)
         if let storedTaskReference,
            let taskID = Self.canonicalTaskID(from: storedTaskReference)
@@ -273,13 +379,19 @@ final class DirectVoiceSessionModel {
         gazeTracker.onSample = { [weak self] sample in
             guard let self else { return }
             latestGaze = sample
-            face?.gaze(sample)
+            iPhoneFace?.gaze(sample)
+            carPlayFace?.gaze(sample)
         }
         publishLiveActivityState()
     }
 
+
+
     var statusLabel: String {
-        state.label(agentName: displayAgentName)
+        if desktopPreparationID != nil, !desktopPrepared, voice == nil {
+            return "Connecting transcript to Codex"
+        }
+        return state.label(agentName: displayAgentName)
     }
 
     var displayAgentName: String {
@@ -326,7 +438,10 @@ final class DirectVoiceSessionModel {
     }
 
     var canToggleSpeakerOutput: Bool {
-        guard voice != nil, outputMuteOperationID == nil else { return false }
+        guard voice != nil,
+              nativeMedia == nil,
+              outputMuteOperationID == nil
+        else { return false }
         switch state {
         case .listening, .thinking, .speaking: return true
         default: return false
@@ -338,11 +453,56 @@ final class DirectVoiceSessionModel {
         refreshAvailability()
     }
 
-    func attach(face: any DirectFaceJavaScriptControlling) {
-        self.face = face
-        webReady = true
+    func attach(
+        face: any DirectFaceJavaScriptControlling,
+        role: DirectFaceControllerRole
+    ) {
+        switch role {
+        case .iPhone:
+            iPhoneFace = face
+        case .carPlay:
+            carPlayFace = face
+        }
+        refreshWebReadiness()
         face.setSkin(selectedFace)
         face.gaze(latestGaze)
+        refreshAvailability()
+        #if DEBUG
+        print(
+            "NightBloodMedia attached role=\(role) "
+                + "hostedCarPlay=\(isCarPlayMediaSurfaceHosted) "
+                + "webReady=\(webReady)"
+        )
+        #endif
+    }
+
+    func attach(face: any DirectFaceJavaScriptControlling) {
+        attach(face: face, role: .iPhone)
+    }
+
+    func carPlayMediaSurfaceDidAttach() {
+        isCarPlayMediaSurfaceHosted = true
+        refreshWebReadiness()
+        refreshAvailability()
+    }
+
+    func carPlayMediaSurfaceDidDetach() {
+        isCarPlayMediaSurfaceHosted = false
+        refreshWebReadiness()
+        refreshAvailability()
+    }
+
+    func detach(
+        face: any DirectFaceJavaScriptControlling,
+        role: DirectFaceControllerRole
+    ) {
+        switch role {
+        case .iPhone:
+            if iPhoneFace === face { iPhoneFace = nil }
+        case .carPlay:
+            if carPlayFace === face { carPlayFace = nil }
+        }
+        refreshWebReadiness()
         refreshAvailability()
     }
 
@@ -356,6 +516,16 @@ final class DirectVoiceSessionModel {
             return false
         }
         selectedFace = DirectFaceSkin.allCases[destination]
+        return true
+    }
+
+    /// Selects an exact character for non-swipe surfaces such as CarPlay.
+    /// The same idle-only guard used by the iPhone picker remains authoritative.
+    @discardableResult
+    func selectFace(_ face: DirectFaceSkin) -> Bool {
+        guard canSelectFace else { return false }
+        guard selectedFace != face else { return true }
+        selectedFace = face
         return true
     }
 
@@ -378,12 +548,19 @@ final class DirectVoiceSessionModel {
     }
 
     func toggleMicrophoneInput() async {
-        guard canToggleMicrophoneInput, let face else { return }
+        guard canToggleMicrophoneInput else { return }
         let target = !isMicrophoneMuted
         let operationID = UUID()
         let generation = lifecycleGeneration
         inputMuteOperationID = operationID
-        let confirmed = await face.setInputMuted(target)
+        let confirmed: Bool
+        if let nativeMedia {
+            confirmed = nativeMedia.setInputMuted(target)
+        } else if let face {
+            confirmed = await face.setInputMuted(target)
+        } else {
+            confirmed = false
+        }
         guard inputMuteOperationID == operationID else { return }
         inputMuteOperationID = nil
         guard generation == lifecycleGeneration,
@@ -396,7 +573,8 @@ final class DirectVoiceSessionModel {
             // cannot prove the requested state, fail closed rather than show
             // a potentially false mute indicator.
             lastError = "The microphone change could not be confirmed, so the conversation is ending."
-            face.closeLocalOnly()
+            face?.closeLocalOnly()
+            nativeMedia?.close()
             stopFromUserGesture()
             return
         }
@@ -404,17 +582,49 @@ final class DirectVoiceSessionModel {
     }
 
     func startGazeTracking() {
-        gazeTracker.start()
+        gazeRequested = true
+        if faceVisible { gazeTracker.start() }
     }
 
     func pauseGazeTracking() {
+        gazeRequested = false
         gazeTracker.pause()
     }
 
-    /// Called only while DeviceAccessGate holds a Face-ID-unlocked foreground
-    /// app session. The WebView gets no token: it receives one invocation and
-    /// must supply a valid SDP offer within the short-lived native grant.
+    func setFaceVisible(_ visible: Bool) {
+        faceVisible = visible
+        if visible && gazeRequested {
+            gazeTracker.start()
+        } else {
+            gazeTracker.pause()
+        }
+    }
+
+    /// Called while DeviceAccessGate holds a Face-ID-unlocked phone session.
+    /// The WebView gets no token: it receives one invocation and must supply a
+    /// valid SDP offer within the short-lived native grant.
     func authoriseAndStartFromUserGesture() {
+        authoriseAndStartFromUserGesture(surface: .iPhone)
+    }
+
+    /// CarPlay itself is the foreground, user-operated surface. A tap here is
+    /// allowed to create the same one-shot grant without waking or unlocking
+    /// the phone screen; all persisted pairing and transport checks remain.
+    func authoriseAndStartFromCarPlayUserGesture() {
+        guard isCarPlayConnected else { return }
+        authoriseAndStartFromUserGesture(surface: .carPlay)
+    }
+
+    private func authoriseAndStartFromUserGesture(
+        surface: DirectVoiceStartSurface
+    ) {
+        if canRetryVoiceConnection {
+            desktopPreparationFailed = false
+            state = .unavailable
+            lastError = nil
+            refreshAvailability()
+            return
+        }
         guard voice == nil,
               oneShotStartGrant == nil,
               activeStartOperationID == nil,
@@ -436,10 +646,22 @@ final class DirectVoiceSessionModel {
             lastError = "Choose a Codex task link or task ID before starting Voice."
             return
         }
-        guard webReady, let face else {
-            state = .failed
-            lastError = "The bundled NightBlood face is not ready."
+        guard desktopPrepared, desktopPreparedTaskID == taskID,
+              desktopTransport != nil else {
+            refreshAvailability()
             return
+        }
+        let startFace: (any DirectFaceJavaScriptControlling)?
+        switch surface {
+        case .iPhone:
+            guard webReady, let face else {
+                state = .failed
+                lastError = "The bundled NightBlood face is not ready."
+                return
+            }
+            startFace = face
+        case .carPlay:
+            startFace = nil
         }
         let character = selectedFace
         let personalityPrompt: CodexRemoteVoicePrompt
@@ -470,22 +692,52 @@ final class DirectVoiceSessionModel {
             character: character,
             realtimeVoice: preferredVoice(for: character),
             personalityPrompt: personalityPrompt,
-            lifecycleGeneration: lifecycleGeneration
+            readySound: readySound,
+            lifecycleGeneration: lifecycleGeneration,
+            surface: surface
         )
+        performanceID = grant.id
+        performanceOrigin = ProcessInfo.processInfo.systemUptime
+        tracePerformance("start.authorised")
         oneShotStartGrant = grant
+        sessionFace = startFace
         awaitingMediaReady = true
         state = .connecting
         lastError = nil
-        face.start(character: character)
+        #if DEBUG
+        let mediaOwner = startFace == nil ? "native-CarPlay" : "iPhone"
+        print(
+            "NightBloodMedia start surface=\(surface) "
+                + "owner=\(mediaOwner)"
+        )
+        #endif
+        // The gesture consumes the attached connection and authorises one
+        // media offer. Fresh attestation can overlap microphone/ICE.
+        preparedStartID = grant.id
+        preparedStart = Task { @MainActor [weak self] in
+            guard let self else { throw CodexRemoteVoiceError.cancelled }
+            return try await self.prepareConnection(for: grant)
+        }
+        if let startFace {
+            armOfferWatchdog(for: grant)
+            startFace.start(character: character)
+        } else {
+            Task { @MainActor [weak self] in
+                await self?.startNativeCarPlay(grant)
+            }
+        }
     }
 
     func stopFromUserGesture() {
         guard state.isActive || voice != nil else { return }
+        let stoppingFace = face
+        cancelStartupWatchdog()
         oneShotStartGrant = nil
         awaitingMediaReady = false
         conversationWasBackgrounded = false
         advanceLifecycleGeneration()
         state = .stopping
+        nativeMedia?.close()
         if let voice {
             _ = beginStop(for: voice)
         } else {
@@ -495,13 +747,180 @@ final class DirectVoiceSessionModel {
             lastStopConfirmedAt = Date()
             lastError = nil
             if activeStartOperationID == nil {
+                sessionFace = nil
                 state = isConfigured ? .ready : .unavailable
+                refreshAvailability()
             }
         }
         // Local microphone/WebRTC closure is best-effort presentation work.
         // The native stop above owns the security boundary even if the page
         // has reloaded or JavaScript cannot answer.
-        face?.stop()
+        stoppingFace?.stop()
+    }
+
+    private func failPreparedStart(_ grant: StartGrant, error: String) {
+        guard grant.lifecycleGeneration == lifecycleGeneration else { return }
+        oneShotStartGrant = nil
+        awaitingMediaReady = false
+        advanceLifecycleGeneration()
+        releaseSessionFace(closeLocalMedia: true)
+        if let voice {
+            _ = beginStop(for: voice, terminalError: error)
+        } else {
+            state = .failed
+            lastError = error
+        }
+    }
+
+    private func prepareConnection(for grant: StartGrant) async throws
+        -> CodexRemoteVoiceTransport
+    {
+        let becameActive = await waitForInteractiveSurface(for: grant)
+        guard becameActive,
+              !Task.isCancelled,
+              grant.lifecycleGeneration == lifecycleGeneration,
+              Date() <= grant.expiresAt,
+              isStartSurfaceActive(grant.surface),
+              voice == nil,
+              desktopPrepared,
+              desktopPreparedTaskID == grant.taskID,
+              let transport = desktopTransport
+        else { throw CodexRemoteVoiceError.cancelled }
+        desktopPreparationID = nil
+        desktopPreparation?.cancel()
+        desktopPreparation = nil
+        desktopTransport = nil
+        desktopPreparedTaskID = nil
+        desktopPrepared = false
+        guard !Task.isCancelled,
+              grant.lifecycleGeneration == lifecycleGeneration,
+              Date() <= grant.expiresAt,
+              isStartSurfaceActive(grant.surface)
+        else {
+            await transport.close()
+            throw CodexRemoteVoiceError.cancelled
+        }
+        voice = transport
+        observe(transport)
+        do {
+            tracePerformance("attestation.begin")
+            try await transport.prepareVoiceStart(performanceID: grant.id)
+            tracePerformance("attestation.ready")
+            guard !Task.isCancelled,
+                  grant.lifecycleGeneration == lifecycleGeneration,
+                  isStartSurfaceActive(grant.surface),
+                  voice === transport
+            else { throw CodexRemoteVoiceError.cancelled }
+            return transport
+        } catch {
+            if voice === transport, stopOperationVoice !== transport {
+                await transport.close()
+                releaseVoice(ifIdenticalTo: transport)
+            }
+            if grant.lifecycleGeneration == lifecycleGeneration {
+                oneShotStartGrant = nil
+                awaitingMediaReady = false
+                state = .failed
+                lastError = error.localizedDescription
+                releaseSessionFace(closeLocalMedia: true)
+            }
+            throw error
+        }
+    }
+
+    private func startNativeCarPlay(_ grant: StartGrant) async {
+        guard oneShotStartGrant?.id == grant.id else { return }
+        oneShotStartGrant = nil
+        guard grant.lifecycleGeneration == lifecycleGeneration,
+              isStartSurfaceActive(.carPlay),
+              preparedStartID == grant.id,
+              let preparedStart
+        else {
+            settleCancelledStartWait()
+            return
+        }
+
+        activeStartOperationID = grant.id
+        defer { finishStartOperation(grant.id) }
+
+        do {
+            let media = try nativeMediaFactory.makeSession()
+            nativeMedia = media
+            // Connection preparation is already running from the gesture.
+            // Await the media branch here so an offer failure cancels that
+            // preparation promptly, before any realtime start is possible.
+            let offer = try await media.makeOffer()
+            tracePerformance("native.offer.ready")
+            let transport = try await preparedStart.value
+            guard grant.lifecycleGeneration == lifecycleGeneration,
+                  isStartSurfaceActive(.carPlay)
+            else {
+                media.close()
+                nativeMedia = nil
+                throw CodexRemoteVoiceError.cancelled
+            }
+
+            tracePerformance("realtime.start.begin")
+            let result = try await transport.start(
+                threadID: grant.taskID,
+                sdpOffer: offer,
+                voice: grant.realtimeVoice,
+                prompt: grant.personalityPrompt
+            )
+            guard grant.lifecycleGeneration == lifecycleGeneration,
+                  isStartSurfaceActive(.carPlay),
+                  voice === transport,
+                  nativeMedia === media
+            else {
+                media.close()
+                _ = beginStop(for: transport)
+                throw CodexRemoteVoiceError.cancelled
+            }
+            try await media.acceptAnswer(result.sdpAnswer)
+            await media.playReadyCue(character: grant.character, sound: grant.readySound)
+            guard grant.lifecycleGeneration == lifecycleGeneration,
+                  voice === transport, nativeMedia === media
+            else { throw CodexRemoteVoiceError.cancelled }
+            guard media.setInputMuted(isMicrophoneMuted) else {
+                throw DirectNativeWebRTCError.connectionFailed
+            }
+            awaitingMediaReady = false
+            state = .listening
+            showReadyFlash()
+            lastError = nil
+        } catch {
+            if grant.lifecycleGeneration == lifecycleGeneration {
+                advanceLifecycleGeneration()
+            }
+            nativeMedia?.close()
+            nativeMedia = nil
+            awaitingMediaReady = false
+            guard let transport = voice else {
+                if !(error is CancellationError),
+                   (error as? CodexRemoteVoiceError) != .cancelled
+                {
+                    state = .failed
+                    lastError = error.localizedDescription
+                }
+                return
+            }
+            let snapshot = await transport.snapshot()
+            apply(snapshot)
+            switch snapshot.state {
+            case .started:
+                _ = beginStop(
+                    for: transport,
+                    terminalError: error.localizedDescription
+                )
+            case .startOutcomeUnknown, .stopping, .stopOutcomeUnknown:
+                break
+            default:
+                await transport.close()
+                releaseVoice(ifIdenticalTo: transport)
+                state = .failed
+                lastError = error.localizedDescription
+            }
+        }
     }
 
     /// The only mutating entry point callable from JavaScript. It consumes the
@@ -512,36 +931,39 @@ final class DirectVoiceSessionModel {
         guard let grant = oneShotStartGrant else {
             throw DirectVoiceSessionError.startNotAuthorised
         }
+        tracePerformance("browser.offer.received")
+        cancelStartupWatchdog()
         oneShotStartGrant = nil
         guard Date() <= grant.expiresAt,
               selectedFace == grant.character,
               grant.lifecycleGeneration == lifecycleGeneration
         else {
-            state = .failed
-            awaitingMediaReady = false
+            failPreparedStart(grant, error: DirectVoiceSessionError.startGrantExpired.localizedDescription)
             throw DirectVoiceSessionError.startGrantExpired
         }
-        let becameActive = await waitForForeground(for: grant)
+        let becameActive = await waitForInteractiveSurface(for: grant)
         guard becameActive,
               Date() <= grant.expiresAt,
               grant.lifecycleGeneration == lifecycleGeneration,
-              UIApplication.shared.applicationState == .active
+              isStartSurfaceActive(grant.surface)
         else {
             if Task.isCancelled
                 || grant.lifecycleGeneration != lifecycleGeneration
-                || UIApplication.shared.applicationState == .background
+                || !isStartSurfaceActive(grant.surface)
             {
+                if grant.lifecycleGeneration == lifecycleGeneration {
+                    stopFromUserGesture()
+                }
                 settleCancelledStartWait()
                 throw CodexRemoteVoiceError.cancelled
             }
             let error: DirectVoiceSessionError = Date() > grant.expiresAt
                 ? .startGrantExpired
                 : .applicationDidNotBecomeActive
-            state = .failed
-            lastError = error.localizedDescription
+            failPreparedStart(grant, error: error.localizedDescription)
             throw error
         }
-        guard voice == nil, let setup else {
+        guard preparedStartID == grant.id, let preparedStart else {
             throw DirectVoiceSessionError.sessionAlreadyOwned
         }
 
@@ -550,26 +972,22 @@ final class DirectVoiceSessionModel {
 
         let transport: CodexRemoteVoiceTransport
         do {
-            transport = try await setup.makeVoiceTransport()
+            transport = try await preparedStart.value
         } catch {
-            if grant.lifecycleGeneration == lifecycleGeneration {
-                state = .failed
-                lastError = error.localizedDescription
-                awaitingMediaReady = false
-            }
+            failPreparedStart(grant, error: error.localizedDescription)
             throw error
         }
         guard grant.lifecycleGeneration == lifecycleGeneration,
-              UIApplication.shared.applicationState == .active
+              isStartSurfaceActive(grant.surface)
         else {
             await transport.close()
             awaitingMediaReady = false
+            releaseSessionFace(closeLocalMedia: true)
             throw CodexRemoteVoiceError.cancelled
         }
-        voice = transport
-        observe(transport)
+        guard voice === transport else { throw CodexRemoteVoiceError.cancelled }
         do {
-            try await transport.connect()
+            tracePerformance("realtime.start.begin")
             let result = try await transport.start(
                 threadID: grant.taskID,
                 sdpOffer: sdpOffer,
@@ -580,8 +998,13 @@ final class DirectVoiceSessionModel {
             // phone's WebRTC peer and realtime event channel are live. The
             // trusted page's subsequent `session/live` event owns the visible
             // Listening transition and its one-shot ready cue.
+            tracePerformance("realtime.answer.ready")
             state = .connecting
             lastError = nil
+            armMediaReadyWatchdog(
+                for: transport,
+                lifecycleGeneration: grant.lifecycleGeneration
+            )
             return result
         } catch {
             let snapshot = await transport.snapshot()
@@ -615,7 +1038,15 @@ final class DirectVoiceSessionModel {
     }
 
     func applicationDidEnterBackground() {
+        appInBackground = true
         pauseGazeTracking()
+        // UIKit backgrounds the phone scene independently of the foreground
+        // CarPlay scene. Connection is the stable lifecycle boundary here;
+        // foregroundActive briefly lags during a cold launch and previously
+        // caused the controller to be torn down before CarPlay became usable.
+        if isCarPlayConnected {
+            return
+        }
         let preservesConversation = state.mayContinueInBackground
             && voice != nil
             && oneShotStartGrant == nil
@@ -634,6 +1065,12 @@ final class DirectVoiceSessionModel {
     }
 
     func applicationDidBecomeActive() {
+        appInBackground = false
+        if canRetryVoiceConnection {
+            desktopPreparationFailed = false
+            state = .unavailable
+            lastError = nil
+        }
         guard let voice else {
             conversationWasBackgrounded = false
             refreshAvailability()
@@ -659,15 +1096,35 @@ final class DirectVoiceSessionModel {
         }
     }
 
+    func carPlayDidConnect() {
+        isCarPlayConnected = true
+        refreshWebReadiness()
+        refreshAvailability()
+    }
+
+    func carPlayDidDisconnect() {
+        isCarPlayConnected = false
+        refreshWebReadiness()
+        guard !NightBloodVoiceSceneActivity.isIPhoneApplicationActive else {
+            refreshAvailability()
+            return
+        }
+        stopForLifecycleLoss(closeLocalMedia: true)
+    }
+
     private func stopForLifecycleLoss(closeLocalMedia: Bool) {
+        cancelDesktopPreparation()
+        cancelStartupWatchdog()
         oneShotStartGrant = nil
         awaitingMediaReady = false
         conversationWasBackgrounded = false
         advanceLifecycleGeneration()
         if closeLocalMedia {
             face?.closeLocalOnly()
+            nativeMedia?.close()
         }
         guard let voice else {
+            sessionFace = nil
             refreshAvailability()
             return
         }
@@ -681,7 +1138,7 @@ final class DirectVoiceSessionModel {
             )
             let snapshot = await voice.snapshot()
             await MainActor.run {
-                guard let self else { return }
+                guard let self, self.voice === voice else { return }
                 self.apply(snapshot)
                 self.releaseVoice(ifIdenticalTo: voice)
             }
@@ -701,10 +1158,15 @@ final class DirectVoiceSessionModel {
         case "session":
             guard let eventState = message["state"] as? String else { return }
             if eventState == "live" {
+                let firstReady = awaitingMediaReady
+                tracePerformance("microphone.ready")
+                cancelStartupWatchdog()
                 awaitingMediaReady = false
                 state = .listening
+                if firstReady { showReadyFlash() }
                 lastError = nil
             } else if eventState == "error" {
+                cancelStartupWatchdog()
                 let detail = (message["detail"] as? String)?.prefix(512)
                 let failure = detail.map(String.init)
                     ?? "The NightBlood media connection failed."
@@ -719,6 +1181,7 @@ final class DirectVoiceSessionModel {
                     state = .stopping
                     _ = beginStop(for: voice, terminalError: failure)
                 } else {
+                    releaseSessionFace(closeLocalMedia: true)
                     state = .failed
                 }
             }
@@ -732,6 +1195,22 @@ final class DirectVoiceSessionModel {
                 print("NightBloodBackground event=\(kind) detail=\(detail)")
             }
             #endif
+            if ["speech-started", "speech-stopped", "assistant-speaking", "assistant-done"].contains(kind) {
+                tracePerformance(kind)
+            }
+            if kind == "performance", let detail = message["detail"] as? [String: Any],
+               let stage = detail["stage"] as? String,
+               ["microphone.acquired", "offer.ready", "answer.ready", "microphone.ready", "output.first", "network.stats"].contains(stage)
+            {
+                tracePerformance("browser." + stage)
+                let numeric = ["elapsedMs", "rttMs", "jitterMs", "packetsLost"]
+                    .compactMap { key -> String? in
+                        guard let number = detail[key] as? Double, number.isFinite,
+                              number >= 0, number < 10_000_000 else { return nil }
+                        return "\(key)=\(number)"
+                    }.joined(separator: " ")
+                Self.performanceLog.info("voice id=\(self.performanceID.uuidString, privacy: .public) metrics=\(numeric, privacy: .public)")
+            }
             switch kind {
             case "speech-started":
                 awaitingAssistant = false
@@ -761,15 +1240,29 @@ final class DirectVoiceSessionModel {
         }
     }
 
-    func faceProcessWillReload() {
-        webReady = false
-        face = nil
+    func faceProcessWillReload(
+        face: any DirectFaceJavaScriptControlling,
+        role: DirectFaceControllerRole
+    ) {
+        let wasActive = self.face === face
+        detach(face: face, role: role)
         pauseGazeTracking()
-        stopForLifecycleLoss(closeLocalMedia: false)
+        if wasActive {
+            stopForLifecycleLoss(closeLocalMedia: false)
+        }
     }
 
     func refreshAvailability() {
-        let available = isConfigured && webReady && voice == nil
+        let taskID = Self.canonicalTaskID(from: taskReference)
+        let eligible = isConfigured && (!appInBackground || isCarPlayConnected)
+            // CarPlay didConnect precedes foregroundActive on a cold launch.
+            // Wait for the scene callback before starting the foreground-only
+            // Remote handshake. Merely being plugged in is not readiness.
+            && interactiveSurfaceIsActive()
+            && voice == nil && state != .outcomeUnknown
+        if desktopPreparedTaskID != taskID || !eligible {
+            cancelDesktopPreparation()
+        }
         // `available` answers whether a new conversation may start. During an
         // owned live conversation it is necessarily false, but that must not
         // be forwarded as a disconnected face state. Foreground setup refresh
@@ -781,8 +1274,72 @@ final class DirectVoiceSessionModel {
         else {
             return
         }
+        if eligible, let taskID, desktopPreparationID == nil {
+            beginDesktopPreparation(taskID: taskID)
+        }
+        let available = eligible && desktopPrepared
+            && (webReady || isCarPlayConnected)
         face?.setAvailable(available)
         state = available ? .ready : .unavailable
+    }
+
+    private func cancelDesktopPreparation() {
+        desktopPreparationID = nil
+        desktopPreparation?.cancel()
+        desktopPreparation = nil
+        desktopPrepared = false
+        desktopPreparedTaskID = nil
+        if let transport = desktopTransport {
+            desktopTransport = nil
+            Task { await transport.close() }
+        }
+    }
+
+    private func beginDesktopPreparation(taskID: String) {
+        guard let setup else { return }
+        let preparationID = UUID()
+        desktopPreparationID = preparationID
+        desktopPreparedTaskID = taskID
+        desktopPreparation = Task { @MainActor [weak self] in
+            guard let self else { return }
+            var created: CodexRemoteVoiceTransport?
+            do {
+                let transport = try await setup.makeVoiceTransport()
+                created = transport
+                guard self.desktopPreparationID == preparationID, !Task.isCancelled else {
+                    await transport.close()
+                    return
+                }
+                self.desktopTransport = transport
+                try await transport.connect()
+                try await transport.prepareDesktopTranscript(threadID: taskID)
+                guard self.desktopPreparationID == preparationID, !Task.isCancelled else {
+                    await transport.close()
+                    return
+                }
+                self.desktopPrepared = true
+                self.desktopPreparationFailed = false
+                self.lastError = nil
+                self.refreshAvailability()
+                let updates = await transport.updates()
+                for await snapshot in updates {
+                    guard self.desktopPreparationID == preparationID, !Task.isCancelled else { return }
+                    if snapshot.transportClosed || snapshot.state == .failed {
+                        throw CodexRemoteVoiceError.desktopTranscriptUnavailable
+                    }
+                }
+            } catch {
+                await created?.close()
+                guard self.desktopPreparationID == preparationID, !Task.isCancelled else { return }
+                self.desktopPreparationID = nil
+                self.desktopTransport = nil
+                self.desktopPrepared = false
+                self.desktopPreparationFailed = true
+                self.state = .failed
+                self.face?.setAvailable(false)
+                self.lastError = error.localizedDescription
+            }
+        }
     }
 
     private var isConfigured: Bool {
@@ -801,6 +1358,41 @@ final class DirectVoiceSessionModel {
                     self.handleObservedSnapshot(snapshot, from: transport)
                 }
             }
+        }
+        nativeTranscriptUpdatesTask?.cancel()
+        nativeTranscriptUpdatesTask = Task { [weak self] in
+            let updates = await transport.transcriptUpdates()
+            for await event in updates {
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    guard let self,
+                          self.voice === transport,
+                          self.nativeMedia != nil
+                    else { return }
+                    self.handleNativeTranscript(event)
+                }
+            }
+        }
+    }
+
+    private func handleNativeTranscript(
+        _ event: CodexRemoteVoiceTranscriptEvent
+    ) {
+        mergeTranscript(
+            role: event.role,
+            text: event.text,
+            done: event.isFinal,
+            partialSemantics: .incremental
+        )
+
+        if event.role == "user" {
+            awaitingAssistant = event.isFinal
+            state = event.isFinal ? .thinking : .listening
+        } else {
+            awaitingAssistant = false
+            state = event.isFinal
+                ? (backingWorkActive ? .thinking : .listening)
+                : .speaking
         }
     }
 
@@ -889,8 +1481,13 @@ final class DirectVoiceSessionModel {
         ifIdenticalTo transport: CodexRemoteVoiceTransport
     ) {
         guard voice === transport else { return }
+        cancelStartupWatchdog()
         voiceUpdatesTask?.cancel()
         voiceUpdatesTask = nil
+        nativeTranscriptUpdatesTask?.cancel()
+        nativeTranscriptUpdatesTask = nil
+        nativeMedia?.close()
+        nativeMedia = nil
         voice = nil
         backingWorkActive = false
         awaitingAssistant = false
@@ -900,7 +1497,8 @@ final class DirectVoiceSessionModel {
         isSpeakerOutputMuted = false
         awaitingMediaReady = false
         conversationWasBackgrounded = false
-        face?.setWorking(false)
+        sessionFace?.setWorking(false)
+        sessionFace = nil
         if terminalCleanupVoice === transport {
             terminalCleanupVoice = nil
         }
@@ -927,6 +1525,7 @@ final class DirectVoiceSessionModel {
                 if self.stopOperationVoice === transport {
                     self.stopOperation = nil
                     self.stopOperationVoice = nil
+                    self.refreshAvailability()
                 }
             }
             self.state = .stopping
@@ -972,29 +1571,141 @@ final class DirectVoiceSessionModel {
         return elapsed >= 0 && elapsed <= 10
     }
 
+    private func tracePerformance(_ stage: String) {
+        let elapsedMs = (ProcessInfo.processInfo.systemUptime - performanceOrigin) * 1_000
+        Self.performanceLog.info("voice id=\(self.performanceID.uuidString, privacy: .public) stage=\(stage, privacy: .public) elapsedMs=\(elapsedMs, privacy: .public)")
+    }
+
     private func finishStartOperation(_ operationID: UUID) {
         guard activeStartOperationID == operationID else { return }
         activeStartOperationID = nil
+        if preparedStartID == operationID {
+            preparedStart = nil
+            preparedStartID = nil
+        }
         if state == .stopping,
            voice == nil,
            hasRecentConfirmedStop
         {
             state = isConfigured ? .ready : .unavailable
             lastError = nil
+            refreshAvailability()
+        }
+    }
+
+    private func showReadyFlash() {
+        readyFlashTask?.cancel()
+        readyFlashActive = true
+        readyFlashTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(2_700))
+            } catch { return }
+            self?.readyFlashActive = false
+            self?.readyFlashTask = nil
         }
     }
 
     private func advanceLifecycleGeneration() {
+        readyFlashTask?.cancel()
+        readyFlashTask = nil
+        readyFlashActive = false
+        cancelStartupWatchdog()
+        preparedStart?.cancel()
+        preparedStart = nil
+        preparedStartID = nil
         inputMuteOperationID = nil
         outputMuteOperationID = nil
         lifecycleGeneration = lifecycleGeneration == UInt64.max
             ? 0 : lifecycleGeneration + 1
     }
 
+    private func refreshWebReadiness() {
+        // Loading the bundled page is not sufficient evidence for CarPlay:
+        // its controller must also be attached to the active CPWindow. The
+        // ordinary iPhone controller is already attached by UIViewRepresentable.
+        webReady = isCarPlayConnected
+            ? iPhoneFace != nil
+                || (carPlayFace != nil && isCarPlayMediaSurfaceHosted)
+            : face != nil
+    }
+
+    private func armOfferWatchdog(for grant: StartGrant) {
+        cancelStartupWatchdog()
+        let duration = startupWatchdogDuration
+        startupWatchdog = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: duration)
+            } catch {
+                return
+            }
+            guard let self,
+                  self.oneShotStartGrant?.id == grant.id,
+                  self.lifecycleGeneration == grant.lifecycleGeneration,
+                  self.state == .connecting
+            else {
+                return
+            }
+            self.startupWatchdog = nil
+            self.oneShotStartGrant = nil
+            self.awaitingMediaReady = false
+            self.releaseSessionFace(closeLocalMedia: true)
+            self.advanceLifecycleGeneration()
+            let detail = "Voice could not open the audio connection. Try again."
+            if let transport = self.voice {
+                _ = self.beginStop(for: transport, terminalError: detail)
+            } else {
+                self.state = .failed
+                self.lastError = detail
+            }
+        }
+    }
+
+    private func armMediaReadyWatchdog(
+        for transport: CodexRemoteVoiceTransport,
+        lifecycleGeneration: UInt64
+    ) {
+        cancelStartupWatchdog()
+        let duration = startupWatchdogDuration
+        startupWatchdog = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: duration)
+            } catch {
+                return
+            }
+            guard let self,
+                  self.voice === transport,
+                  self.lifecycleGeneration == lifecycleGeneration,
+                  self.awaitingMediaReady,
+                  self.state == .connecting
+            else {
+                return
+            }
+            self.startupWatchdog = nil
+            self.awaitingMediaReady = false
+            self.advanceLifecycleGeneration()
+            self.face?.closeLocalOnly()
+            _ = self.beginStop(
+                for: transport,
+                terminalError: "Voice connected to Codex but car audio did not become ready. Try again."
+            )
+        }
+    }
+
+    private func cancelStartupWatchdog() {
+        startupWatchdog?.cancel()
+        startupWatchdog = nil
+    }
+
+    private func releaseSessionFace(closeLocalMedia: Bool) {
+        let ownedFace = sessionFace
+        if closeLocalMedia { ownedFace?.closeLocalOnly() }
+        sessionFace = nil
+    }
+
     /// Consumes no capability and never extends the grant. `bridgeStart`
     /// removes the one-shot grant before entering this suspension, while this
     /// loop fails immediately if Stop/background/reload changes generation.
-    private func waitForForeground(for grant: StartGrant) async -> Bool {
+    private func waitForInteractiveSurface(for grant: StartGrant) async -> Bool {
         let settleDeadline = Date().addingTimeInterval(
             Self.foregroundSettleTimeout
         )
@@ -1003,13 +1714,22 @@ final class DirectVoiceSessionModel {
         while Date() <= deadline {
             guard !Task.isCancelled,
                   grant.lifecycleGeneration == lifecycleGeneration,
-                  Date() <= grant.expiresAt,
-                  UIApplication.shared.applicationState != .background
+                  Date() <= grant.expiresAt
             else {
                 return false
             }
-            if UIApplication.shared.applicationState == .active {
+            if isStartSurfaceActive(grant.surface) {
                 return true
+            }
+            switch grant.surface {
+            case .iPhone:
+                if UIApplication.shared.applicationState == .background {
+                    return false
+                }
+            case .carPlay:
+                if !isCarPlayConnected {
+                    return false
+                }
             }
             do {
                 try await Task.sleep(for: .milliseconds(50))
@@ -1020,6 +1740,20 @@ final class DirectVoiceSessionModel {
         return false
     }
 
+    private func isStartSurfaceActive(
+        _ surface: DirectVoiceStartSurface
+    ) -> Bool {
+        switch surface {
+        case .iPhone:
+            NightBloodVoiceSceneActivity.isIPhoneApplicationActive
+        case .carPlay:
+            // The action itself came from the system-hosted CarPlay template.
+            // `didConnect` is the stable lifecycle boundary; scene activation
+            // can briefly lag behind the driver's first template callback.
+            isCarPlayConnected
+        }
+    }
+
     private func settleCancelledStartWait() {
         guard state == .connecting,
               voice == nil,
@@ -1028,39 +1762,34 @@ final class DirectVoiceSessionModel {
         else {
             return
         }
-        state = isConfigured && webReady ? .ready : .unavailable
+        state = isConfigured && (webReady || isCarPlayConnected)
+            ? .ready : .unavailable
         lastError = nil
         awaitingMediaReady = false
+        releaseSessionFace(closeLocalMedia: true)
     }
 
-    private func mergeTranscript(role: String, text: String, done: Bool) {
+    func mergeTranscript(
+        role: String,
+        text: String,
+        done: Bool,
+        partialSemantics: DirectTranscriptPartialSemantics = .cumulative
+    ) {
+        defer {
+            if done { transcriptCompletionRevision &+= 1 }
+        }
         let itemRole: DirectTranscriptItem.Role = role == "user"
             ? .user : .codex
         let finalText = text.trimmingCharacters(
             in: .whitespacesAndNewlines
         )
-        if done,
-           !finalText.isEmpty,
-           let recent = recentFinal(for: itemRole),
-           Date().timeIntervalSince(recent.receivedAt) <= 3,
-           Self.isSameTranscriptRevision(finalText, recent.text),
-           let recentIndex = transcript.firstIndex(where: {
-               $0.id == recent.itemID
-           })
-        {
-            if finalText.count >= transcript[recentIndex].text.count {
-                transcript[recentIndex].text = finalText
-            }
-            transcript[recentIndex].isFinal = true
-            rememberFinal(
-                role: itemRole,
-                item: transcript[recentIndex],
-                receivedAt: Date()
-            )
-            return
-        }
-        if let index = transcript.indices.last,
-           transcript[index].role == itemRole,
+        let partialText = String(text.drop(while: { $0.isWhitespace }))
+        // The other speaker can start before this role's authoritative final
+        // arrives. Reconcile by role so the live row finalises in place even
+        // when it is no longer the last item in the conversation.
+        if let index = transcript.lastIndex(where: {
+            $0.role == itemRole
+        }),
            !transcript[index].isFinal
         {
             if done {
@@ -1069,11 +1798,14 @@ final class DirectVoiceSessionModel {
                 }
                 transcript[index].isFinal = true
             } else if itemRole == .user {
-                let cumulative = String(text.drop(while: { $0.isWhitespace }))
-                guard !cumulative.isEmpty else { return }
-                if cumulative.hasPrefix(transcript[index].text) {
-                    transcript[index].text = cumulative
-                } else {
+                guard !partialText.isEmpty else { return }
+                switch partialSemantics {
+                case .cumulative:
+                    // The WebRTC controller has already reconciled word
+                    // overlaps and sends the entire current hypothesis. A
+                    // recognition revision therefore replaces, never appends.
+                    transcript[index].text = partialText
+                case .incremental:
                     transcript[index].text += text
                 }
             } else {
@@ -1084,9 +1816,7 @@ final class DirectVoiceSessionModel {
                 transcript[index].text += text
             }
         } else {
-            let initialText = done
-                ? text.trimmingCharacters(in: .whitespacesAndNewlines)
-                : String(text.drop(while: { $0.isWhitespace }))
+            let initialText = done ? finalText : partialText
             guard !initialText.isEmpty else { return }
             transcript.append(
                 DirectTranscriptItem(
@@ -1096,50 +1826,9 @@ final class DirectVoiceSessionModel {
                 )
             )
         }
-        if done, let item = transcript.last, item.role == itemRole {
-            rememberFinal(role: itemRole, item: item, receivedAt: Date())
-        }
         if transcript.count > 100 {
             transcript.removeFirst(transcript.count - 100)
         }
-    }
-
-    private func recentFinal(
-        for role: DirectTranscriptItem.Role
-    ) -> RecentTranscriptFinal? {
-        role == .user ? recentUserFinal : recentCodexFinal
-    }
-
-    private func rememberFinal(
-        role: DirectTranscriptItem.Role,
-        item: DirectTranscriptItem,
-        receivedAt: Date
-    ) {
-        let value = RecentTranscriptFinal(
-            itemID: item.id,
-            text: item.text,
-            receivedAt: receivedAt
-        )
-        if role == .user {
-            recentUserFinal = value
-        } else {
-            recentCodexFinal = value
-        }
-    }
-
-    private static func isSameTranscriptRevision(
-        _ lhs: String,
-        _ rhs: String
-    ) -> Bool {
-        let left = lhs.folding(
-            options: [.caseInsensitive, .diacriticInsensitive],
-            locale: .current
-        )
-        let right = rhs.folding(
-            options: [.caseInsensitive, .diacriticInsensitive],
-            locale: .current
-        )
-        return left == right || left.hasPrefix(right) || right.hasPrefix(left)
     }
 
     private static func canonicalTaskID(from reference: String) -> String? {

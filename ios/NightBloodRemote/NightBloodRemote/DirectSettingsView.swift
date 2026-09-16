@@ -6,10 +6,20 @@ struct DirectSettingsView: View {
     @Bindable var voice: DirectVoiceSessionModel
     @Environment(\.dismiss) private var dismiss
     @State private var pairingCode = ""
+    @State private var carPlayTrace = ""
 
     var body: some View {
         NavigationStack {
             Form {
+                Section("App") {
+                    LabeledContent("Version", value:
+                        Bundle.main.object(forInfoDictionaryKey:
+                            "CFBundleShortVersionString") as? String ?? "Unknown")
+                    LabeledContent("Build", value:
+                        Bundle.main.object(forInfoDictionaryKey:
+                            "CFBundleVersion") as? String ?? "Unknown")
+                }
+
                 Section {
                     LabeledContent("Status", value: setup.statusLabel)
                     Text(setup.guidance)
@@ -138,6 +148,19 @@ struct DirectSettingsView: View {
                 .disabled(!voice.canChangeVoicePreferences)
 
                 Section {
+                    Picker("Ready sound", selection: $voice.readySound) {
+                        ForEach(DirectReadySound.allCases, id: \.self) { sound in
+                            Text(sound.label).tag(sound)
+                        }
+                    }
+                } header: {
+                    Text("Phone welcome")
+                } footer: {
+                    Text("The microphone opens after the welcome finishes. The short tone is ready sooner.")
+                }
+                .disabled(!voice.canChangeVoicePreferences)
+
+                Section {
                     TextField(
                         "Codex task link or UUID",
                         text: $voice.taskReference,
@@ -156,6 +179,27 @@ struct DirectSettingsView: View {
                     Text("Codex task")
                 } footer: {
                     Text("A pasted link is reduced to its task UUID before storage. The task identity remains native; the face WebView receives only a WebRTC answer and never sees this ID, your Mac ID or any credential.")
+                }
+
+                Section {
+                    Button("Refresh trace") {
+                        carPlayTrace = NightBloodCarPlayDiagnostics
+                            .renderedTrace()
+                    }
+                    Button("Copy trace") {
+                        let trace = NightBloodCarPlayDiagnostics.renderedTrace()
+                        carPlayTrace = trace
+                        UIPasteboard.general.string = trace
+                    }
+                    Text(carPlayTrace.isEmpty
+                        ? "No CarPlay lifecycle events recorded yet."
+                        : carPlayTrace)
+                        .font(.caption2.monospaced())
+                        .textSelection(.enabled)
+                } header: {
+                    Text("CarPlay startup trace")
+                } footer: {
+                    Text("This records timestamps and lifecycle states only. It never includes credentials, pairing identifiers or conversation text.")
                 }
             }
             .navigationTitle("Connection")
@@ -176,6 +220,7 @@ struct DirectSettingsView: View {
             .frame(width: 0, height: 0)
         )
         .task {
+            carPlayTrace = NightBloodCarPlayDiagnostics.renderedTrace()
             setup.refreshPersistedState()
         }
         .onChange(of: setup.phase) {

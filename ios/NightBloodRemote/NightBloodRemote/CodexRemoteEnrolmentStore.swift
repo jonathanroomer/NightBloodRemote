@@ -96,13 +96,16 @@ actor CodexRemoteEnrolmentMetadataStore: CodexRemoteEnrolmentMetadataStoring {
 
     private let service: String
     private let account: String
+    private let allowsBackgroundAccess: Bool
 
     init(
         service: String = CodexRemoteEnrolmentMetadataStore.defaultService,
-        account: String = CodexRemoteEnrolmentMetadataStore.defaultAccount
+        account: String = CodexRemoteEnrolmentMetadataStore.defaultAccount,
+        allowsBackgroundAccess: Bool = false
     ) {
         self.service = service
         self.account = account
+        self.allowsBackgroundAccess = allowsBackgroundAccess
     }
 
     func load() throws -> CodexRemoteEnrolmentMetadata? {
@@ -123,7 +126,7 @@ actor CodexRemoteEnrolmentMetadataStore: CodexRemoteEnrolmentMetadataStoring {
             throw CodexRemoteEnrolmentError.keychain(status: status)
         }
         let accessibility = result[kSecAttrAccessible as String] as? String
-        guard accessibility == (kSecAttrAccessibleWhenUnlockedThisDeviceOnly as String)
+        guard accessibility == (expectedAccessibility as String)
         else {
             throw CodexRemoteEnrolmentError.keychainProtectionMismatch
         }
@@ -145,7 +148,7 @@ actor CodexRemoteEnrolmentMetadataStore: CodexRemoteEnrolmentMetadataStoring {
         let data = try encode(metadata)
         var item = baseQuery
         item[kSecValueData as String] = data
-        item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        item[kSecAttrAccessible as String] = expectedAccessibility
         let status = SecItemAdd(item as CFDictionary, nil)
         if status == errSecDuplicateItem {
             if let existing = try load() {
@@ -170,7 +173,7 @@ actor CodexRemoteEnrolmentMetadataStore: CodexRemoteEnrolmentMetadataStoring {
         }
         let attributes: [String: Any] = [
             kSecValueData as String: try encode(metadata),
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+            kSecAttrAccessible as String: expectedAccessibility,
         ]
         let status = SecItemUpdate(
             baseQuery as CFDictionary,
@@ -205,6 +208,12 @@ actor CodexRemoteEnrolmentMetadataStore: CodexRemoteEnrolmentMetadataStoring {
             kSecAttrAccount as String: account,
             kSecAttrSynchronizable as String: false,
         ]
+    }
+
+    private var expectedAccessibility: CFString {
+        allowsBackgroundAccess
+            ? kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            : kSecAttrAccessibleWhenUnlockedThisDeviceOnly
     }
 
     private func encode(_ metadata: CodexRemoteEnrolmentMetadata) throws -> Data {

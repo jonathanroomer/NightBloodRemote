@@ -38,14 +38,16 @@ enum CodexRemoteVoiceConstants {
 /// instructions at the realtime boundary.
 struct CodexRemoteVoicePrompt: Equatable, Sendable {
     let text: String
+    let character: DirectFaceSkin?
 
-    init(validating text: String) throws {
+    init(validating text: String, character: DirectFaceSkin? = nil) throws {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               text.utf8.count <= CodexRemoteVoiceConstants.maximumPromptBytes
         else {
             throw CodexRemoteVoiceError.invalidPrompt
         }
         self.text = text
+        self.character = character
     }
 }
 
@@ -62,6 +64,7 @@ enum CodexRemoteVoiceError: Error, LocalizedError, Sendable, Equatable {
     case stopAlreadyAttempted
     case transportClosed
     case connectionFailed
+    case desktopTranscriptUnavailable
     case oversizedWebSocketFrame
     case malformedRemoteMessage
     case streamIdentityMismatch(field: String)
@@ -102,6 +105,8 @@ enum CodexRemoteVoiceError: Error, LocalizedError, Sendable, Equatable {
             "The Codex Remote Voice connection is closed."
         case .connectionFailed:
             "The secure Codex Remote connection failed."
+        case .desktopTranscriptUnavailable:
+            "NightBlood could not keep the transcript connected to Codex on your Mac. Reopen NightBlood to reconnect."
         case .oversizedWebSocketFrame:
             "Codex Remote returned an oversized message."
         case .malformedRemoteMessage:
