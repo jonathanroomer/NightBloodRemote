@@ -52,7 +52,7 @@ ability to choose a restricted task and normal approval handling.
 - The original phone remains on build 26. Settings open/close, Settings during
   voice, two conversations, correct transcript and voice after reopening passed.
   Its approved full-access/on-request/auto-review task settings are unchanged.
-- The second phone uses build 27, another OpenAI account and the existing Apple
+- The second phone's voice test used build 27, another OpenAI account and the existing Apple
   developer team. It completed enrolment and pairing after workspace Remote was
   enabled. The older host was abandoned after its IPC endpoint mismatch was
   confirmed; no legacy compatibility was added.
@@ -77,6 +77,11 @@ ability to choose a restricted task and normal approval handling.
   remain unverified. The second phone did validate the local phone-only
   entitlement setting with the existing developer team. Simulator checks alone
   cannot prove Secure Enclave, DeviceCheck, Face ID, relay identity or audio.
+- The second phone has since received a local build 28 with the same app code
+  and bundle identity, now using an explicit App ID and a development profile
+  that includes its device and CarPlay capability. Signed entitlement/profile
+  checks and installed-version verification passed. Its existing Keychain
+  identity is unchanged; phone reopen and physical-car acceptance are pending.
 
 ## Resume in this order
 
