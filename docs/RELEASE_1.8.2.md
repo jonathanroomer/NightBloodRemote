@@ -19,8 +19,10 @@ It remains an experimental source project, not a ready-to-install signed app.
 
 ## Public defaults
 
-The public build starts without a selected task or OAuth client ID. Apple
-signing identity is blank and bundle identifiers use `com.example`. Voice task
+The public build starts without a selected task. The 16 September setup fix
+supplies the public upstream Codex OAuth application ID, correcting the blank
+configuration that previously blocked sign-in. Apple signing identity is blank
+and bundle identifiers use `com.example`. Voice task
 creation and automation writes remain disabled unless deliberately enabled in
 local configuration. Generic prompts and procedural chimes replace personal
 prompts and recorded sound-library clips. No signed binaries are included.
@@ -29,6 +31,12 @@ CarPlay requires iOS 26.4 or later and an Apple-approved Voice Based Conversatio
 entitlement. The ordinary iPhone deployment target remains iOS 18. The direct
 Codex Remote connection retains its experimental registration and DeviceCheck
 limitations described in [Connections](CONNECTIONS.md).
+
+The [setup guide](SETUP.md) now covers Mac and phone authorisation, upgrading an
+existing clone, phone-only signing and optional CarPlay setup. This is an
+interim configuration fix; a fresh-account physical connection test remains
+outstanding. It does not add a standalone App Server transport or a new
+sign-out/reset flow.
 
 ## Build and verification
 

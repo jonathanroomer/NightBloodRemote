@@ -26,27 +26,30 @@ samples or vendor app icon are redistributed. See [release notes](docs/RELEASE_1
 CarPlay requires iOS 26.4 or later and Apple's approval for the Voice Based
 Conversation entitlement. A simulator build does not establish that approval.
 
-## One important connection caveat
+## Connect your Mac and iPhone
 
-The face works and the Simulator demo works. The direct Codex Remote connection
-is a different matter. It is **experimental reference code**, not a generally
-available public integration.
+Start with the [step-by-step setup guide](docs/SETUP.md). It covers Apple
+signing, Mac Remote settings, ChatGPT sign-in, iPhone enrolment, pairing and
+selecting the Codex task. Agents should also read [AGENTS.md](AGENTS.md).
 
-In particular:
+**16 September interim fix:** earlier public builds stopped at sign-in because
+`CODEX_OAUTH_CLIENT_ID` was blank. The build now includes the public application
+identifier published in [OpenAI's Codex source](https://github.com/openai/codex/blob/main/codex-rs/login/src/auth/manager.rs).
+It is not the creator's account credential. You sign into your own account;
+there is no personal client ID or API key to obtain for this route. Existing
+clones need to update, regenerate the Xcode project and rebuild, preserving
+their local signing settings as described in the guide.
 
-- There is no OpenAI first-party OAuth client ID in this repository.
-- OpenAI does not currently document a public registration flow for a
-  third-party Codex Remote iPhone controller.
-- The private relay route also requires third-party DeviceCheck acceptance.
-- Task creation and host automation changes are disabled by default. Both need
-  deliberate local configuration.
-- Please do not borrow a client ID from Codex, ChatGPT or another installed
-  application. That is not a clever shortcut. It is someone else's identity.
+This fixes the known missing-configuration error. **Fresh-account enrolment,
+pairing and two-way voice with another Apple signing identity have not yet been
+verified.** The direct Remote protocol and voice attestation are experimental
+and may reject a build or change upstream. Public availability of the client ID
+is not an assurance of OpenAI support for this third-party integration.
 
-The supported public Codex integration surface is Codex App Server. Its remote
-WebSocket transport is documented, although still experimental. This repository
-does not yet implement that alternative transport. Read
-[Connections](docs/CONNECTIONS.md) before trying to connect a real account.
+Optional Voice task creation and automation changes remain disabled by default.
+The direct route uses the desktop app's Remote connection; you do not start a
+separate App Server listener. The alternative standalone App Server WebSocket
+transport is still unimplemented. See [Connections](docs/CONNECTIONS.md).
 
 One further privacy point: App Server failure messages can include diagnostic
 details such as local paths, and those messages may travel through the Realtime
@@ -152,19 +155,19 @@ and signing data do not wander into a commit.
 
 ## Before a physical-device build
 
-1. Read [Connections](docs/CONNECTIONS.md) and [Security](SECURITY.md).
-2. Replace the example bundle identifiers in
-   `ios/NightBloodRemote/project.yml` with identifiers you control.
-3. Select your own Apple development team locally in Xcode or in your private
-   copy of `project.yml`.
-4. Leave `CODEX_OAUTH_CLIENT_ID` blank unless OpenAI has issued an OAuth client
-   registration for this exact application.
+1. Follow [Setup](docs/SETUP.md) and read [Security](SECURITY.md).
+2. Generate the project, then set your own bundle identifiers and Apple team
+   for the app and Live Activity extension in the ignored Xcode project.
+3. For phone-only testing without CarPlay approval, clear the app target's
+   Code Signing Entitlements build setting as described in Setup.
+4. Keep the included public OAuth client configuration. Sign in to your own
+   ChatGPT account on both devices.
 5. Leave `NIGHTBLOOD_ENABLE_VOICE_AUTOMATIONS` set to `NO` unless you have
    reviewed and accepted the bounded host changes described in Connections.
 6. Leave `NIGHTBLOOD_ENABLE_VOICE_TASK_CREATION` set to `NO` unless you have
    reviewed and accepted persistent task creation with inherited permissions.
-7. Regenerate the project, build it and inspect the signing summary before
-   installing it.
+7. Build and inspect the signing summary before installing. Regeneration
+   replaces local Xcode edits; record and reapply them before another build.
 
 ## Fork setup: the blanks are deliberate
 
@@ -176,19 +179,17 @@ needs its own local configuration.
 |---|---|
 | `com.example.nightblood.remote` | Replace it with bundle IDs controlled by the fork owner |
 | `DEVELOPMENT_TEAM: ""` | Select the fork owner's team in the ignored generated Xcode project |
-| `CODEX_OAUTH_CLIENT_ID: ""` | Leave it blank for the demo unless OpenAI explicitly issues one for that application |
+| `CODEX_OAUTH_CLIENT_ID` | Public upstream application ID is supplied; use your own account at sign-in |
 | `NIGHTBLOOD_ENABLE_VOICE_TASK_CREATION: NO` | Keep `NO` unless the fork owner deliberately enables persistent Voice task creation in an ignored local build setting. No project ID is needed |
 | `NIGHTBLOOD_ENABLE_VOICE_AUTOMATIONS: NO` | Keep `NO` unless the fork owner deliberately enables Voice heartbeat creation and deletion in an ignored local build setting |
 | Empty Codex task field | Paste a task link or task UUID locally in Settings before a real session. Only its canonical UUID is persisted |
 | No generated `.xcodeproj` | Run `make ios-project` and do not commit the result |
 | No `.blend` or rendered face files | Regenerate the studies from the included Blender scripts |
 
-The expected safe-demo behaviour is for both faces to build and render while
-account sign-in reports that no Codex Remote OAuth client ID is configured.
-That is intentional, not a missing source file.
-
-Please do not “repair” it by copying an identifier from Codex, ChatGPT, this
-project's private history or somebody else's build.
+The Simulator can render both faces but cannot establish physical-device
+enrolment or voice. A missing-client-ID error means the app was built from old
+or overridden configuration; follow [the upgrade steps](docs/SETUP.md#updating-an-existing-clone).
+Never copy account tokens, pairing state or private keys from another build.
 
 After changing a fork, run:
 
@@ -218,6 +219,8 @@ in [Connections](docs/CONNECTIONS.md) before enabling either feature.
 
 ## Documentation
 
+- [Connect your Mac and iPhone](docs/SETUP.md)
+- [Instructions for setup agents](AGENTS.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Every connection and trust boundary](docs/CONNECTIONS.md)
 - [Create and adapt the faces with Blender and WebGL](docs/FACE_CREATION.md)
