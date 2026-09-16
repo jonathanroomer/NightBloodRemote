@@ -33,6 +33,12 @@ only the owner's authorised choice. Do not keep changing unrelated settings.
    be used on the phone. In managed workspaces, verify the administrator has
    enabled Remote Control for the user or role. Codex access alone is not
    sufficient. SSH-only Connections is a reason to check policy and version.
+   Check [desktop compatibility](docs/SETUP.md#desktop-version-compatibility):
+   the working desktop is 26.908.70816 (9275). An older 26.623.141536 (4753)
+   uses a different IPC location and does not work with this helper. Recommend
+   the latest approved desktop; a newer CLI alone does not update desktop IPC.
+   Do not implement legacy endpoint/protocol fallbacks for this setup. If IT
+   blocks an update, use an approved current installation instead.
 2. **Enable this Mac's Remote host.** Complete its own Remote setup, keep it
    running, online and awake. Workspace permission and host enablement are
    separate steps. Do not add a standalone App Server listener, LAN port or
@@ -85,7 +91,9 @@ For attachment failures, distinguish endpoint missing, permission denied,
 connection refused, handshake/owner mismatch and timeout. Older builds can hide
 permission denial behind `desktop_unavailable`. Use only bounded diagnostics.
 Do not chmod the desktop socket, edit Codex databases or patch its installed
-binary. A desktop version difference is a lead until reproduced, not a verdict.
+binary. The documented older build has a confirmed endpoint mismatch; other
+version differences still need evidence. Never equate pairing with compatible
+desktop attachment or promise that every future build will work.
 
 Simply opening Settings must not restart setup or tear down healthy prepared
 Voice. Keep launch/foreground recovery and explicit refresh actions distinct

@@ -19,7 +19,7 @@ while testing another device. These notes contain no real account/device IDs.
 | Workspace access | Another account had Codex access but immediate enrolment HTTP 403. Remote Control was disabled by its workspace administrator. | Check workspace/role Remote permission before phone enrolment, then complete this Mac's own Remote setup. Once enabled, that test reached enrolment, pairing and host confirmation. Not every 403 necessarily has this cause. |
 | Task selection | A confirmed Mac still did not make Voice ready while the task field was empty. | Require the local task link/UUID for the exact paired host/account. Pairing status and Ready to talk are different. Preserve task permissions if asking its agent for the UUID. |
 | Task permissions | The original working task changed from full access to a restricted workspace profile during testing. Its helper was then denied. | Check live task settings separately from workspace Remote permission. An exact-policy probe reproduced the denial. Restoring that owner's approved original task-specific full access restored phone voice without another install. Keep approval settings and global defaults intact. |
-| Older desktop | The second phone's selected task could not attach on a company-managed older desktop. | Record the version and bounded diagnostic. Respect company update policy. Age alone is not a proven root cause, especially after a similar symptom occurred on the current original Mac. |
+| Older desktop | Read-only inspection of 26.623.141536 (4753) found a live IPC router in the user's temporary directory, while NightBlood requires the Codex-home socket. Remote pairing and helper execution worked. | The endpoint mismatch is confirmed; older protocol compatibility was not tested. Use the latest approved desktop. Updating only the CLI does not update desktop IPC. The owner chose to document this limitation and move to a current host rather than add legacy compatibility. |
 | Settings lifecycle | Home reached Ready to talk and voice worked, but opening Settings produced a secure connection error. | Opening Settings invoked setup reconciliation, which invalidated and replaced the prepared connection. Build 26 removes that refresh. A view-hosting regression fails before and passes after the fix, and the original phone passed the physical checks. The precise earlier live relay rejection was not captured. |
 | Diagnostics | An old generic desktop error concealed permission denial. | Keep distinct endpoint, policy, connection, handshake and timeout reasons. Return only allowlisted codes, never arbitrary helper exceptions, tokens, paths or conversation snapshots. |
 
@@ -63,7 +63,12 @@ ability to choose a restricted task and normal approval handling.
   been transferred to the public experiment, which passes its 36 focused Swift
   tests and 11 helper tests. The existing second-phone identity has a signed
   test update installed. Its current reported blocker remains
-  `desktop_endpoint_missing` on the other Mac; a read-only host check is pending.
+  `desktop_endpoint_missing` on the other Mac. The host report confirmed an
+  older IPC layout on desktop 26.623.141536 (4753), with a CLI override selecting
+  App Server 0.145.0 instead of bundled 0.142.5. The working original desktop
+  is 26.908.70816 (9275), bundled App Server 0.154.0-alpha.6.2. Those are observed
+  combinations, not a published minimum-version contract. The older-Mac test
+  is closed; the next test uses a separate profile on a current desktop.
   Do not label these changes as a shipped public release or a successful
   second-account voice test yet.
 - Another Apple signing team, free Personal Team signing, the new phone-only
@@ -75,9 +80,10 @@ ability to choose a restricted task and normal approval handling.
 
 1. Preserve the accepted original-phone build and task permissions. Its Settings,
    voice, repeated conversation, correct transcript and reopen checks are done.
-2. Resume the second-phone test against its matching account/host. Capture its
-   current bounded error before choosing a fix. Do not assume the original
-   phone's permission failure explains the other host's missing endpoint.
+2. Move the second-phone test to a current desktop with a separate account
+   profile, then pair that host and choose its own task. Keep the existing
+   phone installation and enrolled identity. Do not carry the older host's
+   task UUID into the new profile. Preserve the original account and task.
 3. Move only reviewed, sanitised fixes into the public source. Run its audit
    and relevant checks. Preserve blank team, generic bundle IDs, empty task
    field, generic prompts and disabled optional mutation switches.

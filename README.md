@@ -32,6 +32,14 @@ Start with the [step-by-step setup guide](docs/SETUP.md). It covers Apple
 signing, Mac Remote settings, ChatGPT sign-in, iPhone enrolment, pairing and
 selecting the Codex task. Agents should also read [AGENTS.md](AGENTS.md).
 
+**Use the latest Codex desktop app approved for your Mac.** The working setup
+was verified on desktop **26.908.70816, build 9275**. Older desktop builds can
+pair successfully but fail transcript attachment with `desktop_endpoint_missing`.
+Update the desktop app first; updating only the Codex CLI is not sufficient.
+See [desktop compatibility](docs/SETUP.md#desktop-version-compatibility) for the
+tested versions and managed-Mac guidance. Future desktop compatibility still
+needs verification because this integration uses private interfaces.
+
 Check workspace Remote Control permission, this Mac's Remote setup and the
 selected task's permissions separately. Trusting the phone also does not enable
 Developer Mode: turn it on, restart and confirm it before installing. The guide
@@ -146,6 +154,7 @@ result as a small set of runtime parameters. The full route is in
   enabled for the same account/workspace on the Mac and phone. Managed
   workspaces may require an administrator to enable Remote Control separately.
   Complete the Mac's Remote setup before phone enrolment; see [Setup](docs/SETUP.md#1-prepare-the-mac).
+- A current Codex desktop app; see the [tested desktop version](docs/SETUP.md#desktop-version-compatibility).
 - Blender 5.2 or later, but only if you want to regenerate the design studies.
 
 ## Build the safe Simulator demo

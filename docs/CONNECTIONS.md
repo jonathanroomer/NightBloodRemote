@@ -2,6 +2,9 @@
 
 For the click-by-click Mac and iPhone process, start with [Setup](SETUP.md).
 This document describes the experimental connection and its trust boundaries.
+Use the latest approved Codex desktop app; the verified working desktop is
+26.908.70816 (9275). Older versions can pair while lacking the endpoint this
+helper uses. See [desktop compatibility](SETUP.md#desktop-version-compatibility).
 The build includes one reviewed public upstream OAuth application ID. Do not
 commit account credentials, task/project IDs, Apple team IDs, host names or
 pairing codes.
@@ -215,6 +218,10 @@ long-lived server API key.
 
 ## Failure and recovery
 
+- **Desktop version mismatch / endpoint missing:** update the desktop app,
+  not only its CLI. The older desktop 26.623.141536 (4753) uses a different
+  IPC location. This helper deliberately has no legacy-location fallback.
+  Follow the approved update process or use another current installation.
 - **No OAuth client ID:** update the clone, regenerate the project and rebuild.
   Check for an old local build-setting override. See [upgrade steps](SETUP.md#updating-an-existing-clone).
 - **Simulator enrolment failure:** expected. DeviceCheck, Secure Enclave,

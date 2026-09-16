@@ -21,9 +21,10 @@ The test workspace's administrator then found Remote Control disabled; enabling
 it made the desktop Remote controls appear. The tester subsequently completed
 phone enrolment, Mac pairing and host confirmation. Task attachment then failed
 after about 20 seconds on an older, company-managed desktop app that could not
-be updated. Desktop compatibility is a suspect, not a confirmed cause. Task
-attachment and two-way voice on a current desktop build are still pending,
-as is support for another Apple developer team.
+be updated. A read-only check on that Mac confirmed that its older desktop
+uses a different IPC endpoint from the one this helper requires. The test is
+moving to an approved current desktop; task attachment and two-way voice for
+the second account remain pending, as does another Apple developer team.
 
 ## 1. Prepare the Mac
 
@@ -56,6 +57,31 @@ For this direct route, do not launch a separate `codex app-server --listen`
 process, open a router/LAN port, or install a NightBlood Mac companion. The
 bundled transcript helper starts automatically through the paired App Server.
 It needs `/usr/bin/python3` and a compatible running desktop app.
+
+### Desktop version compatibility
+
+Use the latest Codex desktop app approved for your Mac. The original phone's
+voice, transcript, Settings and reconnect checks passed on **26.908.70816,
+build 9275**, with bundled App Server **0.154.0-alpha.6.2**. This is a verified
+combination, not a claimed minimum version or a guarantee for future releases.
+
+A second host running desktop **26.623.141536, build 4753** successfully paired
+but failed with `desktop_endpoint_missing`. Its running App Server was
+**0.145.0**, selected through a `CODEX_CLI_PATH` override, while the bundled
+version was **0.142.5**. Its desktop IPC router used the older per-user
+temporary location, `codex-ipc/ipc-<uid>.sock`. NightBlood's helper requires
+`<effective Codex home>/ipc/ipc.sock`. The read-only host check confirmed the
+older socket was live, so the observed failure was the endpoint mismatch,
+not missing Remote permission or a failed App Server startup. Compatibility
+of that older router's transcript protocol was not tested.
+
+**Update the desktop application, not just the CLI.** NightBlood does not
+provide a fallback for that older IPC location. Do not create socket links,
+broaden task permissions or start another listener to work around it. If a
+company manages updates, ask IT to approve a current desktop or test on an
+approved current installation elsewhere. Preserve the working account and
+task permissions when switching test hosts; choose a task belonging to the
+new host rather than retaining the previous host's task UUID.
 
 ### Selected task permissions
 
@@ -253,7 +279,7 @@ shared Keychain access groups or copy credentials between them.
 | No online Mac | Check same account/workspace, Remote enabled, desktop app running and Mac awake; refresh. |
 | Desktop attachment failed | Check `/usr/bin/python3`, the selected task and desktop compatibility. Keep the task open on the paired Mac. Use a current desktop version approved for that machine; if company policy blocks an update, test on an approved current installation elsewhere. Newer NightBlood builds report a fixed failure code to distinguish helper execution, desktop handshake, task attachment and timeout. Do not change IPC socket permissions or patch the desktop app. |
 | `desktop_permission_denied`, or an old build's `desktop_unavailable` after previously working | Compare the selected task's live permission profile with its known working settings. Check the helper under that exact policy. Follow the task-specific permission procedure above, preserving approvals and global defaults. |
-| `desktop_endpoint_missing` | Check the paired Mac, intended task, running desktop app and its actual Codex home. This is not proof of a permission denial or of an unsupported account. |
+| `desktop_endpoint_missing` | Check the paired Mac, intended task, actual Codex home and desktop version. Older desktops may use a different socket location even when pairing works. Follow [desktop compatibility](#desktop-version-compatibility) and update the desktop app through the approved process. A CLI update alone is insufficient. Do not broaden permissions or re-enrol to fix an absent endpoint. |
 | `desktop_connection_refused`, reset, handshake failure or timeout | Check whether the desktop/socket is still alive and compatible. Record the bounded code and desktop version. Do not assume Python is missing or change signing because attachment timed out. Some detailed codes exist only in the pending diagnostic candidate. |
 | Voice works from Home but opening Settings produces a secure-connection error | Older builds unnecessarily restart setup when Settings appears. The fix passed the original phone's physical checks in build 26 and is in the public experiment; check release status before updating. In the earlier observed case, reopening the app and starting voice from Home works. This symptom does not by itself call for re-enrolment or more permission changes. |
 | Voice attestation failed | Check physical device/signing and record the redacted failure. Never invent a DeviceCheck proof. |
